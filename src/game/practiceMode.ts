@@ -22,6 +22,9 @@ import { isInCourt, sideOf } from './court';
 import { hasDebugFlag } from './debugFlags';
 import type { GameMode, World } from './mode';
 
+/** Spot just above a player's head, for floating feedback tags. */
+const overHead = (p: Player) => new Vector3(p.pos.x, 6.8, p.pos.z);
+
 /** Extra reach (ft) the human gets when planning a hit: a lunge plus a little forgiveness. */
 const HUMAN_REACH = 2.6;
 
@@ -115,7 +118,7 @@ export class PracticeMode implements GameMode {
         : null;
       const swing = beginSwing(button, time, contact);
       this.human.swing = swing;
-      if (swing.note) this.w.hud.flash(swing.note, 'bad', 700);
+      if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(this.human));
     }
 
     const ctx = {
@@ -150,12 +153,12 @@ export class PracticeMode implements GameMode {
       if (!sw.feed) {
         const reach = reachAtContact(p);
         if (reach === 'miss') {
-          if (p === this.human) this.w.hud.flash('Too far!', 'bad', 800);
+          if (p === this.human) this.w.hud.tag('Too far!', 'bad', overHead(p));
           continue;
         }
         if (reach === 'stretch' && sw.timing) {
           sw.timing = stretchTiming(sw.timing);
-          if (p === this.human) this.w.hud.flash('Stretch!', 'bad', 700);
+          if (p === this.human) this.w.hud.tag('Stretch!', 'bad', overHead(p));
         }
       }
       const aim = p === this.bot ? this.botAi.aim : (this.autopilot?.aim ?? this.humanCtl.aim);
@@ -169,7 +172,7 @@ export class PracticeMode implements GameMode {
     if (e.type === 'net') {
       this.endRally(hitter === this.human ? 'Into the net!' : 'Bot netted it!', hitter !== this.human);
     } else if (e.type === 'netcord') {
-      this.w.hud.flash('Net cord!', 'info', 800);
+      this.w.hud.tag('Net cord!', 'info', new Vector3(e.x, 4, 0));
     } else if (e.type === 'bounce') {
       this.bouncesSinceHit++;
       if (this.bouncesSinceHit === 1) {
@@ -215,7 +218,7 @@ export class PracticeMode implements GameMode {
       return;
     }
     const g = GRADE_TEXT[report.timing.grade];
-    if (!this.human.swing || this.human.contactGap() <= LUNGE_REACH) this.w.hud.flash(g.text, g.kind, 800);
+    if (!this.human.swing || this.human.contactGap() <= LUNGE_REACH) this.w.hud.tag(g.text, g.kind, overHead(this.human));
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }
 

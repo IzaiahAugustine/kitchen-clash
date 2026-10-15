@@ -44,6 +44,9 @@ const GRADE_TEXT = {
 
 type Phase = 'preServe' | 'rally' | 'pointOver' | 'gameOver';
 
+/** Spot just above a player's head, for floating feedback tags. */
+const overHead = (p: Player) => new Vector3(p.pos.x, 6.8, p.pos.z);
+
 /** Who plays a side: you, or an AI at some difficulty. */
 export type Controller = 'human' | Difficulty;
 
@@ -258,7 +261,7 @@ export class MatchMode implements GameMode {
         : null;
       const swing = beginSwing(button, time, contact);
       p.swing = swing;
-      if (swing.note) this.w.hud.flash(swing.note, 'bad', 700);
+      if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(p));
     }
   }
 
@@ -321,12 +324,12 @@ export class MatchMode implements GameMode {
       if (!canHit) continue;
       const reach = reachAtContact(p);
       if (reach === 'miss') {
-        if (s.human) this.w.hud.flash('Too far!', 'bad', 800);
+        if (s.human) this.w.hud.tag('Too far!', 'bad', overHead(p));
         continue;
       }
       if (reach === 'stretch' && sw.timing) {
         sw.timing = stretchTiming(sw.timing);
-        if (s.human) this.w.hud.flash('Stretch!', 'bad', 700);
+        if (s.human) this.w.hud.tag('Stretch!', 'bad', overHead(p));
       }
       const bounced = this.bouncesSinceHit > 0;
       const isReturn = this.referee.hitCount === 1;
@@ -355,7 +358,7 @@ export class MatchMode implements GameMode {
       const f = this.referee.onNet();
       if (f) this.endRally(f);
     } else if (e.type === 'netcord') {
-      this.w.hud.flash('Net cord!', 'info', 800);
+      this.w.hud.tag('Net cord!', 'info', new Vector3(e.x, 4, 0));
     } else if (e.type === 'bounce') {
       this.bouncesSinceHit++;
       if (this.bouncesSinceHit === 1 && this.lastHitter) {
@@ -396,7 +399,7 @@ export class MatchMode implements GameMode {
     if (!s.human) return;
     const g = GRADE_TEXT[report.timing.grade];
     if (report.timing.grade === 'perfect') this.perfects++;
-    if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.flash(g.text, g.kind, 800);
+    if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.tag(g.text, g.kind, overHead(s.player));
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }
 

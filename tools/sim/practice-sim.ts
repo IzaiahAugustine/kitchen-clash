@@ -13,7 +13,10 @@ const world = {
   scene: new THREE.Scene(),
   ball,
   ballView: { clearTrail() {} },
-  hud: { flash: (text: string) => flashes.set(text, (flashes.get(text) ?? 0) + 1) },
+  hud: {
+    flash: (text: string) => flashes.set(text, (flashes.get(text) ?? 0) + 1),
+    tag: (text: string) => flashes.set(text, (flashes.get(text) ?? 0) + 1),
+  },
   keys: {},
   controls: { frame: { moveX: 0, moveY: 0, drive: false, soft: false, feed: false, pause: false }, pad: { connected: false } },
 } as unknown as World;

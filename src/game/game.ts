@@ -78,6 +78,11 @@ export class Game {
       crowd: this.crowd,
     };
     this.scoreboard = new Scoreboard(this.uiRoot, ['YOU', 'CPU'], ['#ff6b35', '#7b2ff7']);
+    this.world.hud.projector = (p) => {
+      const v = p.clone().project(this.cam.camera);
+      if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) return null;
+      return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight };
+    };
     this.menu = new Menu(this.uiRoot);
     this.menu.onNavigate = () => this.sound.play('click', { volume: 0.5 });
     this.applySettings();

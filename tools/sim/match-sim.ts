@@ -20,7 +20,7 @@ const world = {
   scene: new THREE.Scene(),
   ball,
   ballView: { clearTrail() {} },
-  hud: { flash() {} },
+  hud: { flash() {}, tag() {} },
   keys: {},
   controls: { frame: { moveX: 0, moveY: 0, drive: false, soft: false, feed: false, pause: false } },
 } as unknown as World;
