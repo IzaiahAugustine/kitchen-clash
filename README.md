@@ -13,6 +13,7 @@ npm run dev        # opens http://localhost:5173
 - `npm run build`: typecheck and build for production into `dist/`
 - `npm run deploy`: build and publish to https://kitchenclash.web.app (Firebase site `kitchenclash` in project `fairway-legends-51e70`)
 - `npx tsx tools/sim/rules-test.ts`: unit tests for scoring and the referee
+- `npx tsx tools/sim/online-sim.ts [lagMs] [timingNoise]`: host and guest over an in-memory link with lag, checks they stay in sync
 - `npx tsx tools/sim/tutorial-sim.ts`: scripted playthrough of How to Play (checks every step can be completed)
 - `npx tsx tools/sim/match-sim.ts [games] [near] [far] [sideout|rally] [singles|doubles]`: headless AI-vs-AI games (easy/medium/hard) with win rates and how rallies ended; tweak profiles with `AI_TWEAK='{"hard":{"blunder":0.06}}'`
 - `npx tsx tools/sim/practice-sim.ts [seconds] [timingNoise]`: headless bot-vs-bot rally simulation with stats
@@ -31,6 +32,7 @@ npm run dev        # opens http://localhost:5173
 | `src/ai` | AI opponent: difficulty profiles and strategy (plus the simple practice bot) |
 | `src/rules` | Scoring (side-out / rally), referee (faults, two-bounce, kitchen), serve setup |
 | `src/ui` | Menus, HUD, scoreboard, pop-up messages |
+| `src/net` | Online play: rooms in Firebase, direct WebRTC connection (Firebase relay fallback), host and guest modes |
 | `src/audio` | Sound effects and music (files with synthesized fallbacks) |
 | `src/debug` | Ball Lab test harness |
 | `tools/blender` | Python scripts that build the `.glb` models in Blender |
@@ -56,3 +58,11 @@ These skip the title screen (handy for testing):
 - `?warp=6`: fast-forward 6 seconds before the first frame (for screenshots)
 - `?nohud`: hide all on-screen text (clean screenshots)
 - `?hifx`: add ambient occlusion (soft contact shadows); needs a strong GPU
+
+## Online play
+
+Play Online creates a room under `/kc/rooms/<5-digit code>` in the Fairway Legends Realtime
+Database (rules: `database.rules.json` in the fairway-ledgends repo). Players connect directly
+with WebRTC when they can, and fall back to relaying through Firebase. The host runs the match;
+the guest's own movement is local, their swing timing is judged on their screen, and late hits
+are rewound so lag doesn't cost points. Test hooks: `?online=host`, `?join=12345&autojoin`, `?relay`.

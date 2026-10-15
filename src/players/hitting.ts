@@ -87,6 +87,24 @@ export function findContact(player: Player, q: ContactQuery, flight: number): Co
   return q.bestEffort && closest ? makeContact(player, closest, flight, closestBounced) : null;
 }
 
+/**
+ * Contact at a specific moment on the ball's path (an online friend already chose when to hit
+ * on their screen). Null if that moment isn't on the path or the ball is dead by then.
+ */
+export function contactAtTime(player: Player, path: PathSample[], t: number, bouncesSoFar: number, flight: number): Contact | null {
+  if (t <= 0 || !path.length) return null;
+  const dt = path[0].t;
+  const s = path[Math.min(path.length - 1, Math.max(0, Math.round(t / dt) - 1))];
+  if (Math.abs(s.t - t) > 0.05 || s.netted || bouncesSoFar + s.bounces >= 2) return null;
+  if (player.side * s.z < 0.5 || s.y < MIN_CONTACT_HEIGHT || s.y > MAX_CONTACT_HEIGHT) return null;
+  return makeContact(player, s, flight, bouncesSoFar + s.bounces > 0);
+}
+
+/** Contact with the ball at a given point right now (online rewind: a hit that arrived late). */
+export function contactAtPoint(player: Player, pos: Vector3, bounced: boolean, flight: number): Contact {
+  return makeContact(player, { t: 1e-4, x: pos.x, y: pos.y, z: pos.z, bounces: 0, netted: false }, flight, bounced);
+}
+
 function handFor(player: Player, ballX: number): Hand {
   return (ballX - player.pos.x) * player.right.x >= -0.3 ? 'fore' : 'back';
 }

@@ -19,6 +19,8 @@ export interface Settings {
   graphics: 'standard' | 'high';
   /** Finished (or skipped through) How to Play. */
   tutorialDone: boolean;
+  /** Your name in online matches. */
+  name: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   musicVolume: 6,
   graphics: 'standard',
   tutorialDone: false,
+  name: '',
 };
 
 const KEY = 'kitchen-clash-settings';

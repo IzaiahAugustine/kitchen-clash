@@ -11,7 +11,7 @@ import { isTouchDevice } from '../input/touch';
  * Highest render resolution multiplier. Phones have small, very dense screens (3x), so they
  * need more than laptops (2x Retina) to look sharp.
  */
-const MAX_PIXEL_RATIO = isTouchDevice() ? 2 : 1.5;
+const MAX_PIXEL_RATIO = isTouchDevice() ? 3 : 1.5;
 /** Never render below the screen's own resolution: that's what makes things blurry. */
 const MIN_PIXEL_RATIO = 1;
 
@@ -28,7 +28,9 @@ interface QualityLevel {
 function qualityLadder(): QualityLevel[] {
   const top = Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
   const levels: QualityLevel[] = [{ pixelRatio: top, shadowSize: 2048 }, { pixelRatio: top, shadowSize: 1024 }];
-  for (let pr = top - 0.25; pr >= MIN_PIXEL_RATIO - 1e-6; pr -= 0.25) levels.push({ pixelRatio: pr, shadowSize: 1024 });
+  for (let pr = top - (top > 2 ? 0.5 : 0.25); pr >= MIN_PIXEL_RATIO - 1e-6; pr -= pr > 2 ? 0.5 : 0.25) {
+    levels.push({ pixelRatio: pr, shadowSize: 1024 });
+  }
   levels.push({ pixelRatio: MIN_PIXEL_RATIO, shadowSize: 0 });
   return levels;
 }
@@ -45,8 +47,10 @@ export class Stage {
   private ao: GTAOPass | null = null;
   private camera: THREE.Camera | null = null;
   private ladder = qualityLadder();
-  /** Phones start one rung down (lighter shadows), at full sharpness. */
-  private level = isTouchDevice() ? 1 : 0;
+  /** Everyone starts at the top; the ladder finds the right level for the device. */
+  private level = 0;
+  /** Loading and shader warm-up stutter: don't judge performance until this time. */
+  private graceUntil = performance.now() + 4000;
   private frameTimes: number[] = [];
   private lastAdjust = 0;
   /** After stepping down, wait this long before trying a higher rung again (no flip-flopping). */
@@ -130,6 +134,10 @@ export class Stage {
   adaptQuality(dt: number, now: number): void {
     this.frameTimes.push(dt);
     if (this.frameTimes.length > 90) this.frameTimes.shift();
+    if (now < this.graceUntil) {
+      this.frameTimes = [];
+      return;
+    }
     if (now - this.lastAdjust < 2000 || this.frameTimes.length < 60) return;
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
     const typical = sorted[Math.floor(sorted.length * 0.5)];
@@ -142,6 +150,11 @@ export class Stage {
     }
     if (next !== this.level) this.applyLevel(next);
     this.lastAdjust = now;
+  }
+
+  /** Call when a new scene/mode starts: its first moments stutter while shaders compile. */
+  grace(ms = 3000): void {
+    this.graceUntil = Math.max(this.graceUntil, performance.now() + ms);
   }
 
   private applyLevel(i: number): void {

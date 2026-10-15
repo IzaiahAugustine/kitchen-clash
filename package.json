@@ -11,6 +11,7 @@
   },
   "description": "Kitchen Clash — an arcade-style 3D pickleball game for the browser",
   "dependencies": {
+    "firebase": "^11.10.0",
     "three": "^0.186.1"
   },
   "devDependencies": {

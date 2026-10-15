@@ -59,6 +59,8 @@ export class Menu {
   handleKeys(keys: Keyboard): void {
     const s = this.screen;
     if (!s) return;
+    // Typing in a text box (name, match code): leave the keys to it.
+    if (document.activeElement instanceof HTMLInputElement) return;
     const pressed = (codes: string[]) => codes.some((c) => keys.wasPressed(c));
     const n = s.items.length;
     if (pressed(UP)) this.move((this.index - 1 + n) % n);

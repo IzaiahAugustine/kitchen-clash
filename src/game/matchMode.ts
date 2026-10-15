@@ -2,12 +2,16 @@ import { Vector3, type Object3D } from 'three';
 import { AiPlayer, type AiContext } from '../ai/aiPlayer';
 import { PROFILES, type Difficulty } from '../ai/difficulty';
 import type { BallEvent } from '../physics/ball';
+import { PHYS } from '../physics/constants';
 import { predictPath, type PathSample } from '../physics/predict';
 import { strikeGeometry } from '../players/body';
 import {
   MAX_EARLY_LEAD,
   beginSwing,
+  gradeTiming,
   chooseHumanContact,
+  contactAtPoint,
+  contactAtTime,
   executeShot,
   findContact,
   reachAtContact,
@@ -21,7 +25,15 @@ import { PlayerView } from '../players/playerView';
 import { SHOT_NAMES, type Aim, type ShotButton } from '../players/shots';
 import { BounceMarkers } from '../render/markers';
 import { FAULT_TEXT, Referee, type Fault } from '../rules/referee';
-import { DEFAULT_SCORING, Score, otherTeam, teamOfSide, type ScoreConfig, type Team } from '../rules/scoring';
+import {
+  DEFAULT_SCORING,
+  Score,
+  otherTeam,
+  teamOfSide,
+  type RallyOutcome,
+  type ScoreConfig,
+  type Team,
+} from '../rules/scoring';
 import { ServeRotation, clampServer, planServe, serveSetup, type Court, type ServeSetup } from '../rules/serve';
 import type { Scoreboard } from '../ui/scoreboard';
 import { COURT, isInCourt, sideOf, type Side } from './court';
@@ -52,8 +64,29 @@ const overHead = (p: Player) => new Vector3(p.pos.x, 6.8, p.pos.z);
 /** Middle of a court half (x), from that team's own point of view (their right is +x on the near side). */
 const courtX = (side: Side, court: Court) => (court === 'right' ? 1 : -1) * side * 5;
 
-/** Who plays a side: you (with an AI partner in doubles), or an AI at some difficulty. */
-export type Controller = 'human' | Difficulty;
+/**
+ * Who plays a side: you (with an AI partner in doubles), a friend online ('remote', driven by
+ * network input), or an AI at some difficulty.
+ */
+export type Controller = 'human' | 'remote' | Difficulty;
+
+/** Input for a seat played by a friend online: their reported position plus queued presses. */
+export interface RemoteInput {
+  pos: { x: number; z: number } | null;
+  vel: { x: number; z: number };
+  /** One-way network delay (s): their reports are this old by the time they arrive. */
+  lag: number;
+  /** `lead` = seconds to contact on THEIR screen when pressed (so lag doesn't spoil timing). */
+  presses: { button: ShotButton; lead: number; aim: Aim; at?: number }[];
+}
+
+/** Key moments of a match, for sending to an online opponent. */
+export interface MatchListener {
+  serveSetup(info: { serverTeam: Team; call: string; positions: { x: number; z: number }[]; setup: ServeSetup }): void;
+  rallyEnd(info: { fault: Fault; loser: Team; outcome: RallyOutcome; shots: number }): void;
+  hit(info: { team: Team; kind: string; grade: string; mph: number; powered: boolean }): void;
+  gameOver(result: MatchResult): void;
+}
 
 export interface MatchOptions {
   /** `teamSize` 1 = singles, 2 = doubles. */
@@ -62,6 +95,8 @@ export interface MatchOptions {
   near: Controller;
   /** Far side (team 1). */
   far: Controller;
+  /** Override the scoreboard names (online: players' names). */
+  names?: [string, string];
 }
 
 export const DEFAULT_MATCH: MatchOptions = { scoring: DEFAULT_SCORING, near: 'human', far: 'medium' };
@@ -79,6 +114,8 @@ export interface MatchResult {
   ralliesWon: [number, number];
   /** True if a human played on team 0. */
   humanTeam: boolean;
+  /** Which team "you" were on (online guests are team 1). Defaults to 0. */
+  youTeam?: Team;
 }
 
 /** One player slot on a team. */
@@ -88,6 +125,7 @@ interface Seat {
   player: Player;
   human: HumanController | null;
   ai: AiPlayer | null;
+  remote: RemoteInput | null;
 }
 
 const TEAM_PALETTES: [Palette[], Palette[]] = [
@@ -95,7 +133,8 @@ const TEAM_PALETTES: [Palette[], Palette[]] = [
   [PALETTES.rival, PALETTES.rival2],
 ];
 
-const label = (c: Controller) => (c === 'human' ? 'YOU' : `CPU ${PROFILES[c].label.toUpperCase()}`);
+const label = (c: Controller) =>
+  c === 'human' ? 'YOU' : c === 'remote' ? 'FRIEND' : `CPU ${PROFILES[c].label.toUpperCase()}`;
 
 /**
  * A game of pickleball with full rules: underhand diagonal serve, two-bounce rule, kitchen,
@@ -131,6 +170,13 @@ export class MatchMode implements GameMode {
   private ralliesWon: [number, number] = [0, 0];
   /** Called when a game with a human player ends (AI vs AI just starts a new game). */
   onGameOver: ((r: MatchResult) => void) | null = null;
+  /** Online host: told about serves, hits, points and the end of the game. */
+  listener: MatchListener | null = null;
+  /** Online: the last half-second of ball states, so a friend's late-arriving hit can rewind. */
+  private ballHistory: { t: number; pos: Vector3; vel: Vector3; spin: Vector3; rolling: boolean; flight: number; bounces: number }[] = [];
+  /** Online: a "bounced twice" call on the friend's side, held briefly in case their hit is in the post. */
+  private pendingFault: { fault: Fault; at: number } | null = null;
+  private now = 0;
 
   constructor(
     private w: World,
@@ -142,23 +188,22 @@ export class MatchMode implements GameMode {
     const make = (team: Team, c: Controller): Seat[] =>
       Array.from({ length: size }, (_, index) => {
         // In doubles your partner plays at the opponents' level.
-        const level: Difficulty = c === 'human' ? (opts.far === 'human' ? 'medium' : opts.far) : c;
-        const human = c === 'human' && index === 0;
-        const player = new Player(human ? 'You' : 'CPU', team === 0 ? 1 : -1, TEAM_PALETTES[team][index]);
+        const level: Difficulty = c === 'human' || c === 'remote' ? 'medium' : c;
+        const partnerLevel: Difficulty = opts.far === 'human' || opts.far === 'remote' ? 'medium' : opts.far;
+        const person = (c === 'human' || c === 'remote') && index === 0;
+        const player = new Player(person ? 'You' : 'CPU', team === 0 ? 1 : -1, TEAM_PALETTES[team][index]);
         return {
           team,
           index,
           player,
-          human: human ? new HumanController(player) : null,
-          ai: human ? null : new AiPlayer(player, PROFILES[level]),
+          human: person ? new HumanController(player) : null,
+          ai: person ? null : new AiPlayer(player, PROFILES[c === 'human' ? partnerLevel : level]),
+          remote: c === 'remote' && index === 0 ? { pos: null, vel: { x: 0, z: 0 }, lag: 0, presses: [] } : null,
         };
       });
     this.teams = [make(0, opts.near), make(1, opts.far)];
     this.seats = [...this.teams[0], ...this.teams[1]];
-    this.teamNames = [
-      size === 2 && opts.near === 'human' ? 'YOU + CPU' : label(opts.near),
-      label(opts.far),
-    ];
+    this.teamNames = opts.names ?? [size === 2 && opts.near === 'human' ? 'YOU + CPU' : label(opts.near), label(opts.far)];
     this.markers = new BounceMarkers(w.scene);
     this.views = template
       ? this.seats.map(({ player }) => {
@@ -189,11 +234,28 @@ export class MatchMode implements GameMode {
   }
 
   private get watching(): boolean {
-    return !this.seats.some((s) => s.human);
+    return !this.seats.some((s) => s.human && !s.remote);
   }
 
   private get you(): Seat | undefined {
-    return this.seats.find((s) => s.human);
+    return this.seats.find((s) => s.human && !s.remote);
+  }
+
+  /** The remote (online) seat's input, for the host to fill from the network. */
+  get remoteInput(): RemoteInput | null {
+    return this.seats.find((s) => s.remote)?.remote ?? null;
+  }
+
+  /** What an online guest needs each snapshot. */
+  netState() {
+    return {
+      phase: this.phase,
+      lastHitterTeam: this.lastHitter?.team ?? -1,
+      bounces: this.bouncesSinceHit,
+      mustLetBounce: this.referee.mustLetBounce,
+      score: this.score,
+      players: this.seats.map((s) => s.player),
+    };
   }
 
   private get server(): Seat {
@@ -223,6 +285,7 @@ export class MatchMode implements GameMode {
   /** Line everyone up for the next serve and call the score. */
   private setupServe(): void {
     this.phase = 'preServe';
+    this.pendingFault = null;
     this.lastHitter = null;
     this.bouncesSinceHit = 0;
     for (const s of this.seats) {
@@ -251,6 +314,12 @@ export class MatchMode implements GameMode {
     }
     this.phaseTimer = server.ai ? AI_SERVE_DELAY : 0;
     this.holdBallForServe();
+    this.listener?.serveSetup({
+      serverTeam: server.team,
+      call: this.score.call(),
+      positions: this.seats.map((s) => ({ x: s.player.pos.x, z: s.player.pos.z })),
+      setup: this.setup,
+    });
     const who = server.human ? 'Your serve' : this.doubles ? `${this.teamNames[server.team]} serve` : `${this.teamNames[server.team]} serves`;
     this.w.hud.flash(this.score.call(), 'info', 1400, who);
     this.scoreboard?.update(this.score);
@@ -299,7 +368,8 @@ export class MatchMode implements GameMode {
     }
 
     for (const s of this.seats) {
-      if (s.human) this.updateHuman(s, s.human, time);
+      if (s.remote) this.updateRemote(s, s.remote, time);
+      else if (s.human) this.updateHuman(s, s.human, time);
       else if (s.ai) this.updateAi(s, s.ai, time, dt);
     }
 
@@ -410,6 +480,58 @@ export class MatchMode implements GameMode {
     }
   }
 
+  /**
+   * A friend playing online: their own screen moves them (we take its reported position), and
+   * their presses arrive here. Timing is graded by when they pressed on THEIR screen.
+   */
+  private updateRemote(s: Seat, r: RemoteInput, time: number): void {
+    const p = s.player;
+    if (r.pos) {
+      // Lag compensation: they've kept moving since they sent this, so project it forward.
+      const ahead = Math.min(r.lag, 0.25);
+      p.pos.x = Math.max(-15.5, Math.min(15.5, r.pos.x + r.vel.x * ahead));
+      p.pos.z = p.side * Math.max(0.8, Math.min(30, p.side * (r.pos.z + r.vel.z * ahead)));
+      p.vel.set(r.vel.x, 0, r.vel.z);
+    }
+    if (p.swing && time > p.swing.endAt + 0.3) p.swing = null;
+    const ball = this.w.ball;
+    for (const press of r.presses.splice(0)) {
+      s.human!.aim = press.aim;
+      if (this.phase === 'preServe' && this.server === s && !p.swing) {
+        this.serve(time, press.button, press.aim);
+      } else if (this.phase === 'rally' && press.at !== undefined && time - press.at > 1e-3 && time - press.at <= 0.4) {
+        this.rewindSwing(s, press, time);
+      } else if (this.phase === 'rally' && p.canSwing(time) && this.incomingTo(s.team)) {
+        // Hit at the moment their screen chose (sent in our clock), else pick one ourselves.
+        const contact =
+          (press.at !== undefined ? contactAtTime(p, this.path, press.at - time, this.bouncesSinceHit, ball.flight) : null) ??
+          chooseHumanContact(p, this.query(MAX_EARLY_LEAD + 0.3), ball.flight, this.referee.mustLetBounce);
+        const timing = contact && press.lead >= 0 ? gradeTiming(press.lead) : undefined;
+        p.swing = beginSwing(press.button, time, contact, { timing });
+      }
+    }
+  }
+
+  /** A friend's hit that happened (on their screen) a moment ago: replay it from that moment. */
+  private rewindSwing(s: Seat, press: RemoteInput['presses'][number], time: number): void {
+    const ball = this.w.ball;
+    let h = this.ballHistory[0];
+    for (const e of this.ballHistory) if (Math.abs(e.t - press.at!) < Math.abs(h.t - press.at!)) h = e;
+    const legal =
+      h &&
+      Math.abs(h.t - press.at!) < 0.02 &&
+      h.flight === ball.flight &&
+      this.incomingTo(s.team) &&
+      s.player.side * h.pos.z >= 0.5 &&
+      h.pos.y >= 0.4 &&
+      h.bounces < 2;
+    if (!legal) return;
+    const contact = contactAtPoint(s.player, h.pos, h.bounces > 0, ball.flight);
+    const swing = beginSwing(press.button, time, contact, { timing: press.lead >= 0 ? gradeTiming(press.lead) : undefined });
+    swing.rewind = { pos: h.pos, vel: h.vel, spin: h.spin, rolling: h.rolling, bounces: h.bounces, ago: time - h.t };
+    s.player.swing = swing;
+  }
+
   private updateAi(s: Seat, ai: AiPlayer, time: number, dt: number): void {
     const p = s.player;
     if (this.phase === 'preServe') {
@@ -445,9 +567,28 @@ export class MatchMode implements GameMode {
 
   fixedUpdate(dt: number, time: number): void {
     const { ball } = this.w;
+    this.now = time;
+    if (this.pendingFault && time >= this.pendingFault.at) {
+      const f = this.pendingFault.fault;
+      this.pendingFault = null;
+      this.endRally(f);
+    }
+    if (this.remoteInput) {
+      this.ballHistory.push({
+        t: time,
+        pos: ball.pos.clone(),
+        vel: ball.vel.clone(),
+        spin: ball.spin.clone(),
+        rolling: ball.rolling,
+        flight: ball.flight,
+        bounces: this.bouncesSinceHit,
+      });
+      while (this.ballHistory.length && this.ballHistory[0].t < time - 0.5) this.ballHistory.shift();
+    }
     for (const s of this.seats) {
       const p = s.player;
-      p.step(dt, time);
+      // An online friend's position comes from their own screen.
+      if (!s.remote) p.step(dt, time);
       if (this.phase === 'rally') {
         const f = this.referee.watchPlayer(p.side, p.pos.z, time);
         if (f) this.endRally(f);
@@ -467,6 +608,10 @@ export class MatchMode implements GameMode {
         continue;
       }
 
+      if (sw.rewind && this.phase === 'rally' && this.lastHitter?.team !== s.team) {
+        this.playRewind(s, sw, time);
+        continue;
+      }
       const canHit =
         this.phase === 'rally' && ball.inPlay && ball.flight === sw.contact.flight && this.lastHitter?.team !== s.team;
       if (!canHit) continue;
@@ -485,10 +630,44 @@ export class MatchMode implements GameMode {
       const report = executeShot(ball, p, sw, s.ai?.aim ?? s.human!.aim);
       s.ai?.onHit(report.kind, isReturn);
       this.afterHit(s, time);
+      this.listener?.hit({
+        team: s.team,
+        kind: report.kind,
+        grade: report.timing.grade,
+        mph: report.mph,
+        powered: sw.button === 'power',
+      });
       if (fault) this.endRally(fault);
       else this.onGoodHit(s, report);
     }
     if (this.doubles) for (const team of this.teams) this.keepApart(team[0].player, team[1].player);
+  }
+
+  /** Replay a late-arriving hit: put the ball back where it was, hit it, and catch up to now. */
+  private playRewind(s: Seat, sw: Swing, time: number): void {
+    const ball = this.w.ball;
+    const rw = sw.rewind!;
+    if (this.pendingFault) {
+      // We were only waiting to call that double bounce: it never happened after all.
+      this.pendingFault = null;
+      this.referee.live = true;
+    }
+    ball.launch(rw.pos, rw.vel, rw.spin);
+    ball.rolling = rw.rolling;
+    ball.drainEvents();
+    this.bouncesSinceHit = rw.bounces;
+    const fault = this.referee.onHit(s.player.side, rw.bounces > 0, s.player.pos.z, time);
+    const report = executeShot(ball, s.player, sw, s.human!.aim);
+    this.afterHit(s, time);
+    this.listener?.hit({ team: s.team, kind: report.kind, grade: report.timing.grade, mph: report.mph, powered: sw.button === 'power' });
+    if (fault) {
+      this.endRally(fault);
+      return;
+    }
+    for (let t = 0; t < rw.ago && ball.inPlay; t += PHYS.fixedDt) {
+      ball.step(PHYS.fixedDt);
+      for (const e of ball.drainEvents()) this.onBallEvent(e);
+    }
   }
 
   /** Partners don't run through each other. */
@@ -526,7 +705,14 @@ export class MatchMode implements GameMode {
         this.markers.add(e.x, e.z, isInCourt(e.x, e.z) && sideOf(e.z) !== this.lastHitter.player.side);
       }
       const f = this.referee.onBounce(e.x, e.z);
-      if (f) this.endRally(f);
+      if (!f) return;
+      // Online: hold a "bounced twice" call on the friend's side for a moment; their hit may be on its way.
+      const remote = this.seats.find((s) => s.remote);
+      if (f.reason === 'double-bounce' && remote && f.side === remote.player.side) {
+        this.pendingFault = { fault: f, at: this.now + Math.min(0.4, remote.remote!.lag * 2 + 0.06) };
+        return;
+      }
+      this.endRally(f);
     }
   }
 
@@ -559,7 +745,7 @@ export class MatchMode implements GameMode {
   }
 
   private onGoodHit(s: Seat, report: ShotReport): void {
-    if (!s.human) return;
+    if (!s.human || s.remote) return;
     const g = GRADE_TEXT[report.timing.grade];
     const powered = s.player.swing?.button === 'power';
     if (report.timing.grade === 'perfect') {
@@ -586,8 +772,8 @@ export class MatchMode implements GameMode {
     const shots = this.referee.hitCount;
     this.longestRally = Math.max(this.longestRally, shots);
     this.ralliesWon[winner]++;
-    const humanWon = this.teams[winner].some((s) => s.human);
-    const humanLost = this.teams[loser].some((s) => s.human);
+    const humanWon = this.teams[winner].some((s) => s.human && !s.remote);
+    const humanLost = this.teams[loser].some((s) => s.human && !s.remote);
     // The crowd reacts more to long rallies and to your points.
     const excitement = Math.min(1, 0.35 + shots / 14 + (humanWon ? 0.3 : 0));
     this.w.crowd?.cheer(excitement);
@@ -596,11 +782,12 @@ export class MatchMode implements GameMode {
     const servingBefore = this.score.servingTeam;
     const outcome = this.score.rallyWonBy(winner);
     this.rotation.afterRally(servingBefore, outcome);
+    this.listener?.rallyEnd({ fault, loser, outcome, shots });
     const text = FAULT_TEXT[fault.reason];
     const who = humanLost ? (this.doubles ? 'Your team' : 'You') : this.teamNames[loser];
     const result =
       outcome.pointTo !== null
-        ? `Point ${this.teams[outcome.pointTo].some((s) => s.human) ? (this.doubles ? 'your team' : 'you') : this.teamNames[outcome.pointTo]}!`
+        ? `Point ${this.teams[outcome.pointTo].some((s) => s.human && !s.remote) ? (this.doubles ? 'your team' : 'you') : this.teamNames[outcome.pointTo]}!`
         : outcome.sideOut
           ? 'Side out!'
           : 'Second server';
@@ -627,8 +814,9 @@ export class MatchMode implements GameMode {
           longestRally: this.longestRally,
           perfects: this.perfects,
           ralliesWon: [...this.ralliesWon] as [number, number],
-          humanTeam: this.teams[0].some((s) => s.human),
+          humanTeam: this.teams[0].some((s) => s.human && !s.remote),
         };
+        this.listener?.gameOver(result);
         setTimeout(() => this.onGameOver?.(result), 1500);
       }
     } else if (this.score.gamePointFor() !== null) {

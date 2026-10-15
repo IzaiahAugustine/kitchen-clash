@@ -54,13 +54,16 @@ export class ArcadeCamera {
     this.resize(this.aspect);
   }
 
-  /** @param targetX x position to follow (usually the ball or your player). */
-  update(dt: number, targetX: number): void {
+  /**
+   * @param targetX x position to follow (usually the ball or your player)
+   * @param side which end to watch from: 1 = behind the near baseline, -1 = the far one (online guests)
+   */
+  update(dt: number, targetX: number, side: 1 | -1 = 1): void {
     const f = this.framing;
     const k = dt > 0 ? 1 - Math.exp(-2.5 * dt) : 1;
     this.focusX += (targetX * 0.3 - this.focusX) * k;
-    this.camera.position.set(this.focusX, f.height, f.back);
-    this.camera.lookAt(this.focusX * 0.5, 0, f.lookZ);
+    this.camera.position.set(this.focusX, f.height, side * f.back);
+    this.camera.lookAt(this.focusX * 0.5, 0, side * f.lookZ);
     this.applyShake(dt);
   }
 

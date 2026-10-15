@@ -22,6 +22,9 @@ import { debugFlag, hasDebugFlag } from './debugFlags';
 import { MatchMode, type Controller, type MatchResult } from './matchMode';
 import type { GameMode, World } from './mode';
 import { PracticeMode } from './practiceMode';
+import type { Room } from '../net/room';
+import { OnlineHost } from '../net/onlineHost';
+import { OnlineGuest } from '../net/onlineGuest';
 import { TutorialMode } from './tutorialMode';
 import { TouchControls, isTouchDevice } from '../input/touch';
 import { loadSettings, saveSettings, type CameraPreset, type Settings } from './settings';
@@ -61,7 +64,9 @@ export class Game {
   private freeze = 0;
   /** What "Rematch" / "Restart" restarts. */
   private touch: TouchControls | null = null;
-  private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' | 'tutorial' = {
+  /** The online room while in an online match (or waiting for a friend). */
+  private room: Room | null = null;
+  private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' | 'tutorial' | 'online' = {
     near: 'human',
     far: 'medium',
     doubles: false,
@@ -135,6 +140,15 @@ export class Game {
     } else if (hasDebugFlag('watch') || hasDebugFlag('autoplay')) {
       const far = parseDifficulty(debugFlag('difficulty'));
       this.startMatch(parseDifficulty(debugFlag('near'), far), far, hasDebugFlag('doubles'));
+    } else if (debugFlag('online') === 'host') {
+      // Test hook: create a match straight away.
+      this.showTitle();
+      void this.createOnline();
+    } else if (debugFlag('join')) {
+      this.showTitle();
+      this.showJoin(debugFlag('join') ?? '');
+      // Test hook: join without pressing the button.
+      if (hasDebugFlag('autojoin')) void this.joinOnline(debugFlag('join') ?? '');
     } else if (debugFlag('difficulty') || hasDebugFlag('doubles')) {
       this.startMatch('human', parseDifficulty(debugFlag('difficulty')), hasDebugFlag('doubles'));
     } else {
@@ -152,6 +166,7 @@ export class Game {
 
   private setMode(mode: GameMode): void {
     this.mode?.dispose?.();
+    this.stage.grace();
     this.effects.setLanding(null);
     this.effects.setServeBox(null);
     this.mode = mode;
@@ -211,7 +226,183 @@ export class Game {
     });
   }
 
+  // ---------------------------------------------------------------- online
+
+  private escape(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  }
+
+  private nameField(): string {
+    return `<div class="menu-label">Your name</div>
+      <input class="menu-input" id="kc-name" maxlength="14" autocomplete="nickname" placeholder="Player" value="${this.escape(this.settings.name)}">`;
+  }
+
+  /** Reads and saves the name box; falls back to "Player". */
+  private readName(): string {
+    const el = document.getElementById('kc-name') as HTMLInputElement | null;
+    if (el) {
+      this.settings.name = el.value.trim().slice(0, 14);
+      saveSettings(this.settings);
+    }
+    return this.settings.name || 'Player';
+  }
+
+  private showOnline(error = ''): void {
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-headline">Play Online</div>
+        <div class="menu-sub">Play a friend, 1 on 1. One of you creates a match and sends the code.</div>
+        ${error ? `<div class="menu-error">${this.escape(error)}</div>` : ''}
+        ${this.nameField()}`,
+      items: [
+        { label: '▶ Create match', primary: true, action: () => void this.createOnline() },
+        { label: 'Join with a code', action: () => this.showJoin('') },
+        { label: 'Back', action: () => this.showTitle() },
+      ],
+      back: () => this.showTitle(),
+    });
+  }
+
+  private async createOnline(): Promise<void> {
+    const name = this.readName();
+    this.menu.show({ variant: 'title', header: '<div class="menu-headline">Creating match<span class="waiting-dots"></span></div>', items: [] });
+    let room: Room;
+    try {
+      const { Room } = await import('../net/room');
+      room = await Room.create(name);
+    } catch (e) {
+      this.showOnline(e instanceof Error ? e.message : "Couldn't reach the server. Check your connection.");
+      return;
+    }
+    this.room = room;
+    console.info(`[KC] room ${room.code}`);
+    const link = `${location.origin}${location.pathname}?join=${room.code}`;
+    const cancel = () => {
+      room.close();
+      this.room = null;
+      this.showOnline();
+    };
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-headline">Send this to a friend</div>
+        <div class="room-code">${room.code}</div>
+        <div class="invite">${link}</div>
+        <div class="menu-sub">Waiting for your friend to join<span class="waiting-dots"></span></div>`,
+      items: [
+        {
+          label: typeof navigator.share === 'function' ? 'Share invite link' : 'Copy invite link',
+          primary: true,
+          action: () => {
+            const text = `Play Kitchen Clash with me! ${link}`;
+            const nav: Navigator = navigator;
+            if (typeof nav.share === 'function') void nav.share({ title: 'Kitchen Clash', text, url: link }).catch(() => {});
+            else void nav.clipboard?.writeText(link).then(() => this.world.hud.flash('Link copied!', 'good', 900));
+          },
+        },
+        { label: 'Cancel', action: cancel },
+      ],
+      back: cancel,
+    });
+    // The menu hides the HUD, so flash the copy confirmation over it.
+    this.world.hud.muted = false;
+    const guestName = await room.waitForGuest();
+    if (this.room !== room) return;
+    this.menu.show({ variant: 'title', header: `<div class="menu-headline">${this.escape(guestName)} joined!</div><div class="menu-sub">Connecting<span class="waiting-dots"></span></div>`, items: [] });
+    const channel = await room.connect();
+    const host = new OnlineHost(this.world, this.template, this.scoreboard, channel, name, guestName, {
+      ...DEFAULT_SCORING,
+      mode: this.settings.scoring,
+    });
+    host.match.onGameOver = (r) => this.showResults(r);
+    host.onGone = () => this.friendLeft();
+    room.onGone = () => this.friendLeft();
+    this.current = 'online';
+    this.scoreboard.setNames(host.match.names);
+    this.setMode(host);
+    this.enterPlaying();
+    this.world.hud.flash('Connected!', 'good', 1200, channel.kind === 'p2p' ? 'Direct connection' : 'Relayed connection (a bit slower)');
+    console.info(`[KC] host connected via ${channel.kind}`);
+  }
+
+  private showJoin(code: string, error = ''): void {
+    const join = () => {
+      const el = document.getElementById('kc-code') as HTMLInputElement | null;
+      void this.joinOnline((el?.value ?? '').replace(/\D/g, ''));
+    };
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-headline">Join a match</div>
+        ${error ? `<div class="menu-error">${this.escape(error)}</div>` : ''}
+        ${this.nameField()}
+        <div class="menu-label">Match code</div>
+        <input class="menu-input code" id="kc-code" inputmode="numeric" maxlength="5" placeholder="•••••" value="${this.escape(code)}">`,
+      items: [
+        { label: '▶ Join', primary: true, action: join },
+        { label: 'Back', action: () => this.showOnline() },
+      ],
+      back: () => this.showOnline(),
+    });
+    const input = document.getElementById('kc-code') as HTMLInputElement | null;
+    input?.addEventListener('keydown', (e) => e.key === 'Enter' && join());
+    if (!code) input?.focus();
+  }
+
+  private async joinOnline(code: string): Promise<void> {
+    if (code.length !== 5) {
+      this.showJoin(code, 'Match codes are 5 digits.');
+      return;
+    }
+    const name = this.readName();
+    this.menu.show({ variant: 'title', header: '<div class="menu-headline">Joining<span class="waiting-dots"></span></div>', items: [] });
+    try {
+      const { Room } = await import('../net/room');
+      const { room, hostName } = await Room.join(code, name);
+      this.room = room;
+      this.menu.show({ variant: 'title', header: `<div class="menu-headline">Connecting to ${this.escape(hostName)}<span class="waiting-dots"></span></div>`, items: [] });
+      const channel = await room.connect();
+      const guest = new OnlineGuest(this.world, this.template, this.scoreboard, channel, hostName);
+      guest.onGameOver = (r) => this.showResults(r);
+      guest.onNewGame = () => this.enterPlaying();
+      guest.onGone = () => this.friendLeft();
+      room.onGone = () => this.friendLeft();
+      this.current = 'online';
+      this.setMode(guest);
+      this.enterPlaying();
+      console.info(`[KC] guest connected via ${channel.kind}`);
+      this.world.hud.flash('Connected!', 'good', 1200, channel.kind === 'p2p' ? 'Direct connection' : 'Relayed connection (a bit slower)');
+    } catch (e) {
+      this.room?.close();
+      this.room = null;
+      this.showJoin(code, e instanceof Error ? e.message : "Couldn't reach the server. Check your connection.");
+    }
+  }
+
+  private leaveOnline(): void {
+    const m = this.mode as unknown as { leave?: () => void };
+    m.leave?.();
+    this.room?.close();
+    this.room = null;
+    this.showTitle();
+  }
+
+  private friendLeft(): void {
+    if (!this.room) return;
+    this.room.close();
+    this.room = null;
+    this.showTitle();
+    this.world.hud.muted = false;
+    this.world.hud.flash('Your friend left', 'info', 2200, 'The online match has ended.');
+    this.world.hud.muted = true;
+  }
+
   private restart(): void {
+    if (this.current === 'online') {
+      if (this.mode instanceof OnlineHost) {
+        this.mode.rematch();
+        this.enterPlaying();
+      }
+      return;
+    }
     if (this.current === 'tutorial') this.startTutorial();
     else if (this.current === 'practice') this.startPractice();
     else this.startMatch(this.current.near, this.current.far, this.current.doubles);
@@ -249,6 +440,7 @@ export class Game {
         },
         this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
         this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
+        { label: 'Play Online', action: () => this.showOnline() },
         { label: 'Watch AI vs AI', action: () => this.showWatchSetup() },
         { label: 'Practice', action: () => this.startPractice() },
         { label: 'Settings', action: () => this.showSettings(() => this.showTitle()) },
@@ -294,6 +486,18 @@ export class Game {
     this.state = 'paused';
     this.touch?.setVisible(false);
     this.sound.setMusic(true);
+    if (this.current === 'online') {
+      this.menu.show({
+        header: '<div class="menu-headline">Menu</div><div class="menu-sub">The match keeps going while you\'re here.</div>',
+        items: [
+          { label: '▶ Back to the match', primary: true, action: () => this.enterPlaying() },
+          { label: 'Settings', action: () => this.showSettings(() => this.showPause()) },
+          { label: 'Leave match', action: () => this.leaveOnline() },
+        ],
+        back: () => this.enterPlaying(),
+      });
+      return;
+    }
     this.menu.show({
       header: '<div class="menu-headline">Paused</div>',
       items: [
@@ -311,7 +515,7 @@ export class Game {
     this.state = 'results';
     this.touch?.setVisible(false);
     this.sound.setMusic(true);
-    const youWon = r.humanTeam && r.winner === 0;
+    const youWon = r.humanTeam && r.winner === (r.youTeam ?? 0);
     const headline = youWon ? 'YOU WIN!' : r.humanTeam ? 'SO CLOSE!' : `${r.names[r.winner]} WINS`;
     const stats = [
       ['Rallies won', `${r.ralliesWon[0]}–${r.ralliesWon[1]}`],
@@ -325,7 +529,15 @@ export class Game {
         <div class="result-score">${r.points[0]} – ${r.points[1]}</div>
         <div class="menu-sub">${r.names[0]} vs ${r.names[1]}</div>
         <div class="result-stats">${stats}</div>`,
-      items: [
+      items:
+        this.current === 'online'
+          ? this.mode instanceof OnlineHost
+            ? [
+                { label: '▶ Rematch', primary: true, action: () => this.restart() },
+                { label: 'Leave match', action: () => this.leaveOnline() },
+              ]
+            : [{ label: 'Leave match', action: () => this.leaveOnline() }]
+          : [
         { label: '▶ Rematch', primary: true, action: () => this.restart() },
         { label: 'Main menu', action: () => this.showTitle() },
       ],
@@ -404,7 +616,8 @@ export class Game {
       this.handleGlobalKeys(input.pause);
     }
 
-    const frozen = this.state === 'paused' || this.state === 'results';
+    // You can't pause a friend: online matches keep running behind the menu.
+    const frozen = (this.state === 'paused' || this.state === 'results') && !this.mode?.online;
     const stopped = this.freeze > 0;
     this.freeze = Math.max(0, this.freeze - dt);
     const gameDt = frozen || stopped ? 0 : dt * this.timeScale;
@@ -431,7 +644,7 @@ export class Game {
 
     if (this.orbit) this.orbit.update();
     else if (this.state === 'title') this.cam.orbit(dt);
-    else this.cam.update(dt, mode.cameraTargetX());
+    else this.cam.update(dt, mode.cameraTargetX(), mode.cameraSide?.() ?? 1);
 
     hud.setPanel(mode.describe() + this.statusLine());
   }

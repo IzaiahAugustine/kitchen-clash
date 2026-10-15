@@ -322,3 +322,18 @@ body.touch .hud-panel { display: none; }
 }
 
 .touch-power { right: calc(40px + env(safe-area-inset-right)); bottom: calc(142px + env(safe-area-inset-bottom)); width: 70px; height: 70px; font-size: 15px; background: #ff5a5f; color: var(--cream); -webkit-text-stroke: 1px var(--ink); }
+
+/* ---------------------------------------------------------------- online */
+.menu-input {
+  all: unset; box-sizing: border-box; display: block; width: 100%; margin: 6px 0 12px; padding: 10px 14px;
+  border-radius: 12px; border: 3px solid var(--ink); background: var(--cream); color: var(--ink);
+  font-family: 'Lilita One', sans-serif; font-size: 22px; text-align: center; letter-spacing: 1px;
+  -webkit-user-select: text; user-select: text; touch-action: manipulation;
+}
+.menu-input.code { font-size: 34px; letter-spacing: 10px; }
+.menu-label { font-weight: 800; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.75; text-align: left; }
+.room-code { font-family: 'Lilita One', sans-serif; font-size: 64px; letter-spacing: 12px; color: var(--sun); line-height: 1; margin: 6px 0; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; }
+.invite { font-size: 13px; word-break: break-all; opacity: 0.8; margin-bottom: 4px; -webkit-user-select: text; user-select: text; }
+.menu-error { color: #ff8a9b; font-weight: 800; margin: 4px 0 8px; }
+.waiting-dots::after { content: ''; animation: dots 1.4s steps(4) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }

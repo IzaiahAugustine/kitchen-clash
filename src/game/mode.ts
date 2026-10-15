@@ -48,4 +48,8 @@ export interface GameMode {
   cameraTargetX(): number;
   /** Remove everything this mode added to the scene. */
   dispose?(): void;
+  /** Which end of the court the camera sits behind (1 = near, the default; -1 = far). */
+  cameraSide?(): 1 | -1;
+  /** Online modes keep running while a menu is open (you can't pause your friend). */
+  readonly online?: boolean;
 }

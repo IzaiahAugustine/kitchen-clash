@@ -38,6 +38,11 @@ export interface Swing {
   feed?: boolean;
   /** Pre-planned shot (serves), used instead of planning from aim + timing at contact. */
   plan?: ShotPlan;
+  /**
+   * Online rewind: a friend's hit that reached us after the moment it happened. Hit the ball
+   * from where it was then, and fast-forward it `ago` seconds.
+   */
+  rewind?: { pos: Vector3; vel: Vector3; spin: Vector3; rolling: boolean; bounces: number; ago: number };
 }
 
 /** Speeding up: a quick first step, but you can't hit top speed instantly. */
