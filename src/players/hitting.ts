@@ -5,7 +5,7 @@ import type { PathSample } from '../physics/predict';
 import { solveShot } from '../physics/trajectory';
 import { BODY, strikeGeometry, type Hand } from './body';
 import { LUNGE_REACH, STRETCH_REACH, type Contact, type Player, type Swing } from './player';
-import { chooseShotKind, lowAttackPenalty, planShot, type Aim, type ShotButton, type ShotKind, type Timing } from './shots';
+import { SPIN_WINDOWS, chooseShotKind, lowAttackPenalty, planShot, spinStreakTiming, type Aim, type ShotButton, type ShotKind, type Timing } from './shots';
 import { buildSwingPoses, styleFor } from './swingPoses';
 
 /** Pressing the button this long before contact is a Perfect. */
@@ -13,14 +13,15 @@ export const IDEAL_LEAD = 0.2;
 /** Pressing earlier than this whiffs. */
 export const MAX_EARLY_LEAD = 0.85;
 export const MIN_CONTACT_HEIGHT = 0.6;
-export const MAX_CONTACT_HEIGHT = 6.4;
+/** Overhead reach with the paddle: high balls can be volleyed (smashed) out of the air. */
+export const MAX_CONTACT_HEIGHT = 8;
 
-/** @param power Power shots demand sharper timing: a narrower Perfect window. */
-export function gradeTiming(lead: number, power = false): Timing {
+/** @param spin Spin shots demand the sharpest timing in the game. */
+export function gradeTiming(lead: number, spin = false): Timing {
   const d = lead - IDEAL_LEAD;
   const error = Math.abs(d);
-  if (error <= (power ? 0.035 : 0.05)) return { grade: 'perfect', error };
-  if (error <= (power ? 0.09 : 0.12)) return { grade: 'good', error };
+  if (error <= (spin ? SPIN_WINDOWS.perfect : 0.05)) return { grade: 'perfect', error };
+  if (error <= (spin ? SPIN_WINDOWS.good : 0.12)) return { grade: 'good', error };
   return { grade: d > 0 ? 'early' : 'late', error };
 }
 
@@ -174,7 +175,7 @@ export function beginSwing(
     contactAt,
     endAt: contactAt + 0.3,
     contact,
-    timing: opts.timing ?? gradeTiming(contact.t, button === 'power'),
+    timing: opts.timing ?? gradeTiming(contact.t, button === 'spin'),
     poses: buildSwingPoses(styleFor(kind), contact.hand, local, g.crouch),
     resolved: false,
     feed: opts.feed,
@@ -211,7 +212,7 @@ export function chooseHumanContact(player: Player, q: ContactQuery, flight: numb
 }
 
 export interface ShotReport {
-  /** Power off a low ball near the net (0 = none, 1 = badly): see lowAttackPenalty. */
+  /** A mistimed roll off a low ball near the net (0 = none, 1 = badly): see lowAttackPenalty. */
   lowAttack: number;
   kind: ShotKind;
   mph: number;
@@ -222,11 +223,14 @@ export interface ShotReport {
 /** Hits the ball: plans the shot from aim + timing, solves the launch, and sends it. */
 export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim): ShotReport {
   const kind = swing.kind as ShotKind;
-  const timing = swing.timing ?? { grade: 'good', error: 0 };
+  const spun = swing.button === 'spin';
+  let timing = swing.timing ?? { grade: 'good', error: 0 };
+  if (spun && !swing.plan) timing = spinStreakTiming(timing, player.spinStreak);
+  player.spinStreak = spun ? player.spinStreak + 1 : 0;
   const from = ball.pos.clone();
   const plan =
     swing.plan ??
-    planShot(kind, from, player.side, swing.hand, aim, timing, swing.button === 'power', {
+    planShot(kind, from, player.side, swing.hand, aim, timing, spun, {
       incomingSpeed: ball.vel.length(),
       hitterSpeed: Math.hypot(player.vel.x, player.vel.z),
     });
@@ -244,6 +248,6 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
     mph: sol.velocity.length() * 0.6818,
     timing,
     target: plan.target,
-    lowAttack: swing.plan ? 0 : lowAttackPenalty(kind, from, swing.button === 'power'),
+    lowAttack: swing.plan ? 0 : lowAttackPenalty(kind, from, timing),
   };
 }

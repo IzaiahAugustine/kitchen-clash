@@ -72,6 +72,8 @@ export class Player {
   splitStepAt = -1;
   /** Wall-clock ms (performance.now) when this player started celebrating a win. */
   celebrateAt = -Infinity;
+  /** Spin shots hit in a row (each one makes the next harder to time). */
+  spinStreak = 0;
 
   constructor(
     readonly name: string,

@@ -44,7 +44,7 @@ export const RIVALS: Rival[] = [
   {
     name: 'Dinky Dan',
     style: 'Loves to dink. Rarely attacks.',
-    tip: 'Be patient at the kitchen and wait for a high ball to power.',
+    tip: 'Be patient at the kitchen and wait for a high ball to smash.',
     profile: style('easy', { label: 'Dinky Dan', attack: 0.1, lobRate: 0.02, dropRate: 0.95 }),
     palette: look({ shirt: '#90be6d', skin: '#ffdbac', hair: '#d4a24c', headwear: 'cap', cap: '#2a9d8f' }),
     venue: 'park',
@@ -94,7 +94,7 @@ export const RIVALS: Rival[] = [
   {
     name: 'The Pickle Champ',
     style: 'The reigning champion. Does everything well.',
-    tip: 'Mix it up: drop, dink, then strike with Power when the ball sits up.',
+    tip: 'Mix it up: drop, dink, then strike with a Perfect topspin roll.',
     profile: style('hard', { label: 'Champ', timingNoise: 0.072, blunder: 0.05, shotIQ: 0.88 }),
     palette: look({ shirt: '#1b1530', trim: '#ffc83d', skin: '#e0ac69', hair: '#1b1530', headwear: 'crown', paddle: '#ffc83d' }),
     venue: 'night',

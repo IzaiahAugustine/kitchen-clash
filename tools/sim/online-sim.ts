@@ -17,7 +17,7 @@ const lag = Number(process.argv[2] ?? 50);
 const noise = Number(process.argv[3] ?? 0.15);
 const leads = new Map<Player, { flight: number; lead: number }>();
 const makeWorld = (log: string[]) => {
-  const frame = { moveX: 0, moveY: 0, drive: false, soft: false, power: false, feed: false, pause: false };
+  const frame = { moveX: 0, moveY: 0, drive: false, soft: false, spin: false, feed: false, pause: false };
   return {
     world: {
       scene: new THREE.Scene(),
@@ -43,7 +43,7 @@ guest.onGameOver = (r) => (over = r);
 /** A decent scripted player: walks to the ball and presses at the ideal moment. */
 function drive(frame: typeof H.frame, me: Player, ball: Ball, incoming: boolean, serving: boolean, f: number) {
   frame.moveX = frame.moveY = 0;
-  frame.drive = frame.soft = frame.power = false;
+  frame.drive = frame.soft = frame.spin = false;
   if (serving) {
     frame.soft = f % 100 === 50;
     return;

@@ -3,9 +3,9 @@ import { COURT, type Side } from '../game/court';
 import { topspin } from '../physics/trajectory';
 import type { Hand } from './body';
 
-export type ShotKind = 'drive' | 'smash' | 'dink' | 'drop' | 'reset' | 'lob' | 'serve' | 'speedup' | 'blast';
-/** The three hit buttons: Drive (J), Soft (K) and Power (L). */
-export type ShotButton = 'drive' | 'soft' | 'power';
+export type ShotKind = 'drive' | 'smash' | 'dink' | 'drop' | 'reset' | 'lob' | 'serve' | 'speedup' | 'roll' | 'slice';
+/** The three hit buttons: Drive (J), Soft (K) and Spin (L). */
+export type ShotButton = 'drive' | 'soft' | 'spin';
 
 export type Grade = 'perfect' | 'good' | 'early' | 'late';
 export interface Timing {
@@ -23,24 +23,26 @@ export const SHOT_NAMES: Record<ShotKind, string> = {
   lob: 'Lob',
   serve: 'Serve',
   speedup: 'Speed-up',
-  blast: 'Power drive',
+  roll: 'Topspin roll',
+  slice: 'Slice',
 };
 
 /**
  * Context shots: the same button does different things depending on where you are.
  *   Drive button: drive from the back, dink at the kitchen, smash a high ball at the kitchen.
  *   Soft button:  drop from the baseline, reset from midcourt, lob from the kitchen.
+ *   Spin button:  topspin roll at the kitchen, slice from the back (tiny timing window).
  */
 export function chooseShotKind(button: ShotButton, contact: Vector3): ShotKind {
   const fromNet = Math.abs(contact.z);
   const atKitchen = fromNet <= COURT.kitchenDepth + 3;
-  if (button === 'power') {
-    // Power: a smash on a high ball, a speed-up at the kitchen, a blistering drive from the back.
-    if (contact.y >= 3.4) return 'smash';
-    return atKitchen ? 'speedup' : 'blast';
+  if (button === 'spin') {
+    // Spin, the skill shot: a dipping topspin roll at the kitchen, a low skidding slice from the back.
+    return atKitchen ? 'roll' : 'slice';
   }
   if (button === 'drive') {
-    if (!atKitchen) return 'drive';
+    // A high ball can be smashed from anywhere; at the kitchen even a chest-high one.
+    if (!atKitchen) return contact.y >= 4.6 ? 'smash' : 'drive';
     return contact.y >= 3.4 ? 'smash' : 'dink';
   }
   if (atKitchen) return 'lob';
@@ -69,7 +71,10 @@ const SPECS: Record<ShotKind, ShotSpec> = {
   lob: { depth: [17.5, 20.5], time: 2.2, spin: 30, clearance: 2.5, width: 7 },
   serve: { depth: [12, 19], time: 1.25, spin: 20, clearance: 1.0, width: 7 },
   speedup: { depth: [8, 15], time: 0.46, spin: 40, clearance: 0.06, width: 7.5 },
-  blast: { depth: [14, 20], time: 0.54, spin: 75, clearance: 0.12, width: 8.5 },
+  // Heavy topspin dives down after the net, so it can be rolled off a low ball.
+  roll: { depth: [6, 13], time: 0.6, spin: 150, clearance: 0.3, width: 8.5 },
+  // Backspin: flat and low, and it checks up after the bounce.
+  slice: { depth: [12, 19], time: 0.88, spin: -85, clearance: 0.22, width: 8 },
 };
 
 /** Aim from the stick while swinging: x = hitter's right, y = deeper. Each -1..1. */
@@ -94,14 +99,28 @@ const ATTACK_HEIGHT = 2.7;
 const ATTACK_ZONE = 12;
 
 /**
- * Power off a ball below net height near the net can't be hit down: it has to go up to clear
- * the net, so it pops up (easy to smash back) or sails long. 0 = fine, 1 = hopeless.
- * This is why low dinks matter: they can't be attacked.
+ * Rolling a ball below net height near the net only works with Perfect timing; anything less
+ * and it pops up (easy to smash back). 0 = fine, 1 = hopeless.
  */
-export function lowAttackPenalty(kind: ShotKind, from: Vector3, powered: boolean): number {
-  if (!powered || kind === 'smash' || Math.abs(from.z) > ATTACK_ZONE || from.y >= ATTACK_HEIGHT) return 0;
-  return Math.min(1, Math.max(0.35, (ATTACK_HEIGHT - from.y) / 1.6));
+export function lowAttackPenalty(kind: ShotKind, from: Vector3, timing: Timing): number {
+  if (kind !== 'roll' || timing.grade === 'perfect' || Math.abs(from.z) > ATTACK_ZONE || from.y >= ATTACK_HEIGHT) return 0;
+  return Math.min(1, Math.max(0.5, (ATTACK_HEIGHT - from.y) / 1.6));
 }
+
+/**
+ * Spin shots get harder to time each time you use one in a row (so they can't be spammed):
+ * the windows shrink, and a hit that misses the smaller window counts as early or late.
+ */
+export function spinStreakTiming(t: Timing, streak: number): Timing {
+  if (streak <= 0 || (t.grade !== 'perfect' && t.grade !== 'good')) return t;
+  const f = 1 / (1 + 0.45 * streak);
+  if (t.error <= SPIN_WINDOWS.perfect * f) return t;
+  if (t.error <= SPIN_WINDOWS.good * f) return { grade: 'good', error: t.error };
+  return { grade: Math.random() < 0.5 ? 'early' : 'late', error: Math.max(t.error, 0.13) };
+}
+
+/** Timing windows (seconds either side of ideal) for spin shots: the tightest in the game. */
+export const SPIN_WINDOWS = { perfect: 0.03, good: 0.075 };
 
 /** Turns a shot kind + aim + timing into a landing target and shape. */
 export function planShot(
@@ -111,8 +130,8 @@ export function planShot(
   hand: Hand,
   aim: Aim,
   timing: Timing,
-  /** Hit with the Power button: faster, but mistimed power shots go badly wrong. */
-  powered = false,
+  /** Hit with the Spin button: tight timing, and mistimed spin shots go badly wrong. */
+  spun = false,
   /** How fast the ball was coming (ft/s) and how fast the hitter was moving (ft/s). */
   situation: { incomingSpeed?: number; hitterSpeed?: number } = {},
 ): ShotPlan {
@@ -125,25 +144,27 @@ export function planShot(
   let scatter = 1;
   let clearance: number | undefined = spec.clearance;
 
-  const power = kind === 'drive' || kind === 'smash' || kind === 'speedup' || kind === 'blast';
-  if (powered && kind === 'smash') time *= 0.8;
-  const low = lowAttackPenalty(kind, from, powered);
+  const power = kind === 'drive' || kind === 'smash' || kind === 'speedup' || kind === 'roll';
+  let spinRate = spec.spin;
+  const low = lowAttackPenalty(kind, from, timing);
   if (timing.grade === 'perfect') {
-    scatter = powered ? 0.3 : 0.35;
-    if (power) time *= powered ? 0.88 : 0.9;
-  } else if (timing.grade === 'good' && powered) {
-    // Power without perfect timing is loose: sometimes it sails long or wide.
-    scatter = 1.4;
-    if (Math.random() < 0.3) {
-      lateral += (Math.random() < 0.5 ? -1 : 1) * rand(3, 5.5);
-      depth += rand(3, 6);
+    scatter = 0.35;
+    if (power) time *= 0.9;
+  } else if (timing.grade === 'good' && spun) {
+    // Spin without perfect timing barely bites, and it's loose: sometimes long or wide.
+    spinRate *= 0.5;
+    scatter = 1.8;
+    if (Math.random() < 0.5) {
+      lateral += (Math.random() < 0.5 ? -1 : 1) * rand(4, 6.5);
+      depth += rand(4, 7);
     }
   } else if (timing.grade === 'early' || timing.grade === 'late') {
     // A mistimed shot goes wrong one of three ways, more likely the worse the timing.
     const bad = Math.min(1, (timing.error - 0.12) / 0.2);
     const roll = Math.random();
-    const soft = !power && kind !== 'lob';
-    if (roll < 0.25 + 0.2 * bad + (powered ? 0.15 : 0)) {
+    const soft = (!power && kind !== 'lob') || spun;
+    if (spun) spinRate *= 0.3;
+    if (roll < 0.25 + 0.2 * bad + (spun ? 0.2 : 0)) {
       // Dumped: hit low and flat, it may find the net.
       time *= 0.72;
       clearance = undefined;
@@ -154,7 +175,7 @@ export function planShot(
       clearance = 2.5;
     } else {
       // Sprayed: early pulls across your body, late pushes the other way, with less pace.
-      const miss = (2.5 + Math.max(0, timing.error - 0.12) * 30) * (powered ? 1.6 : 1);
+      const miss = (2.5 + Math.max(0, timing.error - 0.12) * 30) * (spun ? 1.6 : 1);
       const dir = (timing.grade === 'early' ? -1 : 1) * (hand === 'fore' ? 1 : -1);
       lateral += dir * miss;
       depth += rand(-2.5, 2.5);
@@ -168,8 +189,9 @@ export function planShot(
   // and hitting on the run is less accurate than being set.
   const pressure = Math.min(1, Math.max(0, ((situation.incomingSpeed ?? 0) - 45) / 30));
   const onTheRun = Math.min(1, Math.max(0, ((situation.hitterSpeed ?? 0) - 5) / 8));
-  const hardSwing = power || kind === 'lob';
-  scatter += pressure * (hardSwing ? 1.6 : 0.4) + onTheRun * 1.1;
+  const hardSwing = power || kind === 'lob' || spun;
+  // Brushing the ball for spin while sprinting is especially hard.
+  scatter += pressure * (hardSwing ? 1.6 : 0.4) + onTheRun * (spun ? 2.4 : 1.1);
   if (pressure > 0.5 && hardSwing && timing.grade !== 'perfect' && Math.random() < 0.3 * pressure) {
     // Rushed: the swing is late on the pace and the ball flies long or wide.
     lateral += (Math.random() < 0.5 ? -1 : 1) * rand(2, 4);
@@ -177,10 +199,17 @@ export function planShot(
   }
 
   if (low > 0) {
-    // Attacking a low ball near the net: it floats up slow and high, or sails long.
-    time *= 1 + 0.9 * low;
-    clearance = 0.8 + 2 * low;
-    depth += rand(0, 5) * low;
+    // A mistimed roll off a low ball: often straight into the net, otherwise it floats up
+    // slow and high for the other side to smash.
+    if (Math.random() < 0.3 + 0.25 * low) {
+      time *= 0.7;
+      clearance = undefined;
+      depth = Math.min(depth, 4);
+    } else {
+      time *= 1 + 0.9 * low;
+      clearance = 0.8 + 2 * low;
+      depth += rand(0, 5) * low;
+    }
     scatter = Math.max(scatter, 1.5);
   }
 
@@ -192,7 +221,7 @@ export function planShot(
   return {
     target,
     flightTime: time,
-    spin: topspin(target.clone().sub(from), spec.spin),
+    spin: topspin(target.clone().sub(from), spinRate),
     clearance,
   };
 }

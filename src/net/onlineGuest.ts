@@ -215,11 +215,11 @@ export class OnlineGuest implements GameMode {
     if (m.team !== ME) return;
     const grade = m.grade as keyof typeof GRADE;
     const [text, kind] = GRADE[grade];
-    const label = m.low ? 'Too low to attack!' : m.powered && grade === 'perfect' ? 'POWER!' : text;
+    const label = m.low ? 'Popped it up!' : m.spun && grade === 'perfect' ? (m.kind === 'roll' ? 'ROLLED IT!' : 'SLICED!') : text;
     this.w.hud.tag(label, kind, overHead(this.me));
     if (grade === 'perfect') {
       this.w.fx?.burst(this.w.ball.pos, 1, true);
-      if (m.powered || m.kind === 'smash') this.w.fx?.shake(0.5);
+      if (m.spun || m.kind === 'smash') this.w.fx?.shake(0.5);
     }
     this.lastShot = `${SHOT_NAMES[m.kind as ShotKind] ?? m.kind} · ${(m.mph as number).toFixed(0)} mph · ${text}`;
   }
@@ -413,7 +413,7 @@ export class OnlineGuest implements GameMode {
     return `
       <div class="title">Kitchen Clash <small>Online vs ${this.hostName}</small></div>
       <div><b>WASD</b> move + <b>J</b> <b>K</b> <b>L</b> hit &nbsp;·&nbsp; or <b>Arrows</b> + <b>Z</b> <b>X</b> <b>C</b></div>
-      ${yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = power</div>' : ''}
+      ${yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = spin</div>' : ''}
       <hr/>
       <div>Last shot: ${this.lastShot}</div>
       <div class="dim">Online · ${this.channel.kind === 'p2p' ? 'direct connection' : 'relayed connection'} · ping ${Math.round(this.rtt * 1000)} ms</div>`;

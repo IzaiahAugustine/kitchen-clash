@@ -29,7 +29,7 @@ export class TouchControls {
       <div class="touch-stick"><div class="touch-knob"></div></div>
       <button class="touch-btn touch-hit" data-btn="drive">HIT</button>
       <button class="touch-btn touch-soft" data-btn="soft">SOFT</button>
-      <button class="touch-btn touch-power" data-btn="power">POWER</button>
+      <button class="touch-btn touch-spin" data-btn="spin">SPIN</button>
       <button class="touch-btn touch-pause" data-btn="pause" aria-label="Pause">❚❚</button>`;
     parent.appendChild(this.root);
     this.base = this.root.querySelector('.touch-stick')!;
@@ -70,7 +70,7 @@ export class TouchControls {
   }
 
   /** Was this button tapped since the last frame? Clears it. */
-  take(name: 'drive' | 'soft' | 'power' | 'pause'): boolean {
+  take(name: 'drive' | 'soft' | 'spin' | 'pause'): boolean {
     const had = this.pressedNow.has(name);
     this.pressedNow.delete(name);
     return had;

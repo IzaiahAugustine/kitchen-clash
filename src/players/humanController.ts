@@ -24,7 +24,7 @@ export class HumanController {
       p.intent.x += clamp((preview.standAt.x - p.pos.x) * 2.5, ASSIST_SPEED);
       p.intent.z += clamp((preview.standAt.z - p.pos.z) * 1.5, ASSIST_SPEED * 0.6);
     }
-    if (input.power) return 'power';
+    if (input.spin) return 'spin';
     if (input.drive) return 'drive';
     if (input.soft) return 'soft';
     return null;

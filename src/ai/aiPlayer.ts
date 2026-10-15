@@ -175,6 +175,9 @@ export class AiPlayer {
         // A dink that sat up a little: speed it up with a hard volley at the opponent.
         kind = 'speedup';
         depth = rand(-0.6, 0.2);
+      } else if (smart && c.pos.y >= 1.4 && c.pos.y < 2.6 && Math.random() < (this.profile.attack ?? 0.45) * 0.15) {
+        // Now and then: try the topspin roll off a lower ball (it has to be timed perfectly).
+        button = 'spin';
       } else if (oppBack && smart && !c.bounced && c.pos.y >= 2.2) {
         // Opponent stuck back: punch the volley deep instead of dinking.
         kind = 'drive';

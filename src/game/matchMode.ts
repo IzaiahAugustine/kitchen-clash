@@ -84,7 +84,7 @@ export interface RemoteInput {
 export interface MatchListener {
   serveSetup(info: { serverTeam: Team; call: string; positions: { x: number; z: number }[]; setup: ServeSetup }): void;
   rallyEnd(info: { fault: Fault; loser: Team; outcome: RallyOutcome; shots: number }): void;
-  hit(info: { team: Team; kind: string; grade: string; mph: number; powered: boolean; low: boolean }): void;
+  hit(info: { team: Team; kind: string; grade: string; mph: number; spun: boolean; low: boolean }): void;
   gameOver(result: MatchResult): void;
 }
 
@@ -519,7 +519,7 @@ export class MatchMode implements GameMode {
         const contact =
           (press.at !== undefined ? contactAtTime(p, this.path, press.at - time, this.bouncesSinceHit, ball.flight) : null) ??
           chooseHumanContact(p, this.query(MAX_EARLY_LEAD + 0.3), ball.flight, this.referee.mustLetBounce);
-        const timing = contact && press.lead >= 0 ? gradeTiming(press.lead, press.button === 'power') : undefined;
+        const timing = contact && press.lead >= 0 ? gradeTiming(press.lead, press.button === 'spin') : undefined;
         p.swing = beginSwing(press.button, time, contact, { timing });
       }
     }
@@ -541,7 +541,7 @@ export class MatchMode implements GameMode {
     if (!legal) return;
     const contact = contactAtPoint(s.player, h.pos, h.bounces > 0, ball.flight);
     const swing = beginSwing(press.button, time, contact, {
-      timing: press.lead >= 0 ? gradeTiming(press.lead, press.button === 'power') : undefined,
+      timing: press.lead >= 0 ? gradeTiming(press.lead, press.button === 'spin') : undefined,
     });
     swing.rewind = { pos: h.pos, vel: h.vel, spin: h.spin, rolling: h.rolling, bounces: h.bounces, ago: time - h.t };
     s.player.swing = swing;
@@ -650,7 +650,7 @@ export class MatchMode implements GameMode {
         kind: report.kind,
         grade: report.timing.grade,
         mph: report.mph,
-        powered: sw.button === 'power',
+        spun: sw.button === 'spin',
         low: report.lowAttack > 0,
       });
       if (fault) this.endRally(fault);
@@ -680,7 +680,7 @@ export class MatchMode implements GameMode {
       kind: report.kind,
       grade: report.timing.grade,
       mph: report.mph,
-      powered: sw.button === 'power',
+      spun: sw.button === 'spin',
       low: report.lowAttack > 0,
     });
     if (fault) {
@@ -748,12 +748,12 @@ export class MatchMode implements GameMode {
     }
     const you = this.you;
     const yourServe = this.phase === 'preServe' && you && this.server === you;
-    const hint = yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = power (aim with A/D)</div>' : '';
+    const hint = yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = spin (aim with A/D)</div>' : '';
     const partner = this.doubles && you ? '<div class="dim">Doubles: your teal partner covers the other half</div>' : '';
     return `
       <div class="title">Kitchen Clash <small>vs ${this.teamNames[1]}${this.doubles ? ' · Doubles' : ''}</small></div>
       <div><b>WASD</b> move + <b>J</b> <b>K</b> <b>L</b> hit &nbsp;·&nbsp; or <b>Arrows</b> + <b>Z</b> <b>X</b> <b>C</b></div>
-      <div><b>J</b> Drive · dink &nbsp; <b>K</b> Soft · drop · lob &nbsp; <b>L</b> Power (risky!)</div>
+      <div><b>J</b> Drive · dink &nbsp; <b>K</b> Soft · drop · lob &nbsp; <b>L</b> Spin (hardest to time!)</div>
       ${partner}${hint}
       <hr/>
       <div>Last shot: ${this.lastShot}</div>`;
@@ -770,18 +770,18 @@ export class MatchMode implements GameMode {
   private onGoodHit(s: Seat, report: ShotReport): void {
     if (!s.human || s.remote) return;
     const g = GRADE_TEXT[report.timing.grade];
-    const powered = s.player.swing?.button === 'power';
-    if (report.timing.grade === 'perfect' && !(powered && report.lowAttack > 0)) {
+    const spun = s.player.swing?.button === 'spin';
+    if (report.timing.grade === 'perfect') {
       this.perfects++;
       this.w.fx?.burst(this.w.ball.pos, 1, true);
-      // A Perfect put-away or power shot gets a tiny freeze-frame and a camera kick.
-      if (powered || report.kind === 'smash' || report.mph > 40) {
-        this.w.fx?.hitstop(powered ? 0.09 : 0.07);
-        this.w.fx?.shake(powered ? 0.7 : 0.5);
+      // A Perfect put-away or spin shot gets a tiny freeze-frame and a camera kick.
+      if (spun || report.kind === 'smash' || report.mph > 40) {
+        this.w.fx?.hitstop(spun ? 0.09 : 0.07);
+        this.w.fx?.shake(spun ? 0.6 : 0.5);
       }
     }
-    const tooLow = powered && report.lowAttack > 0;
-    const label = tooLow ? 'Too low to attack!' : powered && report.timing.grade === 'perfect' ? 'POWER!' : g.text;
+    const popped = report.lowAttack > 0;
+    const label = popped ? 'Popped it up!' : spun && report.timing.grade === 'perfect' ? (report.kind === 'roll' ? 'ROLLED IT!' : 'SLICED!') : g.text;
     if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.tag(label, g.kind, overHead(s.player));
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }

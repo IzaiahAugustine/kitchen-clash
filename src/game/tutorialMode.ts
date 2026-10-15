@@ -22,7 +22,7 @@ import { clampServer, planServe, serveSetup, type ServeSetup } from '../rules/se
 import { COURT, inKitchen, isInCourt } from './court';
 import type { GameMode, World } from './mode';
 
-type StepId = 'move' | 'drive' | 'perfect' | 'soft' | 'power' | 'dink' | 'serve' | 'rules';
+type StepId = 'move' | 'drive' | 'perfect' | 'soft' | 'spin' | 'dink' | 'serve' | 'rules';
 
 interface Step {
   id: StepId;
@@ -37,7 +37,7 @@ interface Keys {
   move: string;
   hit: string;
   soft: string;
-  power: string;
+  spin: string;
 }
 
 const STEPS: Step[] = [
@@ -69,10 +69,10 @@ const STEPS: Step[] = [
     goal: 2,
   },
   {
-    id: 'power',
-    title: 'Power',
+    id: 'spin',
+    title: 'Spin',
     text: (k) =>
-      `<b>${k.power}</b> hits as hard as you can, but it needs great timing. Save it for balls you can hit <i>down</i>: near the net, power off a ball below net height just pops up. That's why low dinks matter! Land 1 power shot from back here.`,
+      `<b>${k.spin}</b> hits with spin: the hardest shot in the game. From the back it's a low <b>slice</b>; at the net it's a dipping <b>topspin roll</b>. Only near-perfect timing works, and each spin shot in a row is harder than the last. Land 1 spin shot.`,
     goal: 1,
   },
   {
@@ -140,8 +140,8 @@ export class TutorialMode implements GameMode {
     palette?: Palette,
   ) {
     this.keys = touch
-      ? { move: 'Drag the left side of the screen', hit: 'HIT', soft: 'SOFT', power: 'POWER' }
-      : { move: 'Use WASD (or the arrow keys)', hit: 'J', soft: 'K', power: 'L' };
+      ? { move: 'Drag the left side of the screen', hit: 'HIT', soft: 'SOFT', spin: 'SPIN' }
+      : { move: 'Use WASD (or the arrow keys)', hit: 'J', soft: 'K', spin: 'L' };
     this.you = new Player('You', 1, palette ?? PALETTES.hero);
     this.coach = new Player('Coach', -1, PALETTES.rival);
     this.ctl = new HumanController(this.you);
@@ -324,7 +324,7 @@ export class TutorialMode implements GameMode {
       you.swing = swing;
       if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(you));
       if (button === 'drive' && this.current.id === 'soft') this.w.hud.tag(`Use ${this.keys.soft} for soft shots`, 'info', overHead(you), 1400);
-      if (button !== 'power' && this.current.id === 'power') this.w.hud.tag(`Use ${this.keys.power} for power`, 'info', overHead(you), 1400);
+      if (button !== 'spin' && this.current.id === 'spin') this.w.hud.tag(`Use ${this.keys.spin} for spin`, 'info', overHead(you), 1400);
     }
     // Show where the coach's feed will land, like in a real match.
     const s = incoming && this.bouncesSinceHit === 0 ? this.path.find((p) => p.bounces >= 1) : undefined;
@@ -446,7 +446,7 @@ export class TutorialMode implements GameMode {
     const k = this.lastKind;
     if (id === 'drive') this.succeed('In!');
     else if (id === 'soft' && (k === 'drop' || k === 'reset' || k === 'lob')) this.succeed('Great drop!');
-    else if (id === 'power' && (k === 'blast' || k === 'speedup' || k === 'smash')) this.succeed('Boom!');
+    else if (id === 'spin' && (k === 'slice' || k === 'roll')) this.succeed('Nice spin!');
     else if (id === 'dink' && k === 'dink' && !this.lastVolleyInKitchen) this.succeed('Nice dink!');
     this.endBall();
   }

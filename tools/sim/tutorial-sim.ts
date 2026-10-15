@@ -13,7 +13,7 @@ const el = () => ({ className: '', innerHTML: '', addEventListener() {}, appendC
 (globalThis as unknown as { document: unknown }).document = { createElement: el };
 
 const ball = new Ball();
-const frame = { moveX: 0, moveY: 0, drive: false, soft: false, power: false, feed: false, pause: false };
+const frame = { moveX: 0, moveY: 0, drive: false, soft: false, spin: false, feed: false, pause: false };
 const log: string[] = [];
 const world = {
   scene: new THREE.Scene(),
@@ -43,7 +43,7 @@ for (let f = 0; f < 60 * 400 && !done; f++) {
     stepStart = time;
   }
   frame.moveX = frame.moveY = 0;
-  frame.drive = frame.soft = frame.power = false;
+  frame.drive = frame.soft = frame.spin = false;
   const you = t.you;
   if (id === 'move') {
     const dx = t.moveTarget.x - you.pos.x;
@@ -57,7 +57,7 @@ for (let f = 0; f < 60 * 400 && !done; f++) {
     if (id === 'rules') frame.drive = f % 60 === 0;
   } else if (ball.inPlay) {
     const c = findContact(you as never, { path: predictPath(ball), bouncesSoFar: 0, maxTime: 1.5, slack: 2.6, mustBounce: id === 'dink' }, ball.flight);
-    if (c && Math.abs(c.t - IDEAL_LEAD) < 1 / 60) frame[id === 'soft' ? 'soft' : id === 'power' ? 'power' : 'drive'] = true;
+    if (c && Math.abs(c.t - IDEAL_LEAD) < 1 / 60) frame[id === 'soft' ? 'soft' : id === 'spin' ? 'spin' : 'drive'] = true;
   }
   // --- run a frame
   acc += 1 / 60;

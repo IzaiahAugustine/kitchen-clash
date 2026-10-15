@@ -321,7 +321,7 @@ body.touch .hud-panel { display: none; }
   .hud-toasts { padding-top: 40px; }
 }
 
-.touch-power { right: calc(40px + env(safe-area-inset-right)); bottom: calc(142px + env(safe-area-inset-bottom)); width: 70px; height: 70px; font-size: 15px; background: #ff5a5f; color: var(--cream); -webkit-text-stroke: 1px var(--ink); }
+.touch-spin { right: calc(40px + env(safe-area-inset-right)); bottom: calc(142px + env(safe-area-inset-bottom)); width: 70px; height: 70px; font-size: 15px; background: #9b5cff; color: var(--cream); -webkit-text-stroke: 1px var(--ink); }
 
 /* ---------------------------------------------------------------- online */
 .menu-input {
