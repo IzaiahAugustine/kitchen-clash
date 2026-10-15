@@ -1,7 +1,7 @@
 # Kitchen Clash
 
 An arcade-style 3D pickleball game for the browser (TypeScript + Vite + Three.js).
-Part of [Augustine's Arcade](https://augustinesarcade.com).
+Part of [Augustine's Arcade](https://augustinesarcade.com). Play it at **https://kitchenclash.web.app**.
 
 ## Run it
 
@@ -11,6 +11,7 @@ npm run dev        # opens http://localhost:5173
 ```
 
 - `npm run build`: typecheck and build for production into `dist/`
+- `npm run deploy`: build and publish to https://kitchenclash.web.app (Firebase site `kitchenclash` in project `fairway-legends-51e70`)
 - `npx tsx tools/sim/rules-test.ts`: unit tests for scoring and the referee
 - `npx tsx tools/sim/match-sim.ts [games] [near] [far] [sideout|rally]`: headless AI-vs-AI games (easy/medium/hard) with win rates and how rallies ended; tweak profiles with `AI_TWEAK='{"hard":{"blunder":0.06}}'`
 - `npx tsx tools/sim/practice-sim.ts [seconds] [timingNoise]`: headless bot-vs-bot rally simulation with stats

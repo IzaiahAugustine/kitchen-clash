@@ -6,7 +6,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "models": "node tools/build-models.mjs"
+    "models": "node tools/build-models.mjs",
+    "deploy": "npm run build && npx -y firebase-tools@13 deploy --only hosting:game"
   },
   "description": "Kitchen Clash — an arcade-style 3D pickleball game for the browser",
   "dependencies": {

@@ -237,3 +237,5 @@ html, body {
   70% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -190%) scale(0.95); }
 }
+
+body.nohud #ui { display: none; }
