@@ -72,7 +72,7 @@ const STEPS: Step[] = [
     id: 'power',
     title: 'Power',
     text: (k) =>
-      `<b>${k.power}</b> hits as hard as you can: a blistering drive from the back, a speed-up at the net, a big smash on high balls. It's risky: mistime it and it sprays. Land 1 power shot.`,
+      `<b>${k.power}</b> hits as hard as you can, but it needs great timing. Save it for balls you can hit <i>down</i>: near the net, power off a ball below net height just pops up. That's why low dinks matter! Land 1 power shot from back here.`,
     goal: 1,
   },
   {

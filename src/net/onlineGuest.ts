@@ -212,7 +212,7 @@ export class OnlineGuest implements GameMode {
     if (m.team !== ME) return;
     const grade = m.grade as keyof typeof GRADE;
     const [text, kind] = GRADE[grade];
-    const label = m.powered && grade === 'perfect' ? 'POWER!' : text;
+    const label = m.low ? 'Too low to attack!' : m.powered && grade === 'perfect' ? 'POWER!' : text;
     this.w.hud.tag(label, kind, overHead(this.me));
     if (grade === 'perfect') {
       this.w.fx?.burst(this.w.ball.pos, 1, true);

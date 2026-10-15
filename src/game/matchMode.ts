@@ -84,7 +84,7 @@ export interface RemoteInput {
 export interface MatchListener {
   serveSetup(info: { serverTeam: Team; call: string; positions: { x: number; z: number }[]; setup: ServeSetup }): void;
   rallyEnd(info: { fault: Fault; loser: Team; outcome: RallyOutcome; shots: number }): void;
-  hit(info: { team: Team; kind: string; grade: string; mph: number; powered: boolean }): void;
+  hit(info: { team: Team; kind: string; grade: string; mph: number; powered: boolean; low: boolean }): void;
   gameOver(result: MatchResult): void;
 }
 
@@ -506,7 +506,7 @@ export class MatchMode implements GameMode {
         const contact =
           (press.at !== undefined ? contactAtTime(p, this.path, press.at - time, this.bouncesSinceHit, ball.flight) : null) ??
           chooseHumanContact(p, this.query(MAX_EARLY_LEAD + 0.3), ball.flight, this.referee.mustLetBounce);
-        const timing = contact && press.lead >= 0 ? gradeTiming(press.lead) : undefined;
+        const timing = contact && press.lead >= 0 ? gradeTiming(press.lead, press.button === 'power') : undefined;
         p.swing = beginSwing(press.button, time, contact, { timing });
       }
     }
@@ -527,7 +527,9 @@ export class MatchMode implements GameMode {
       h.bounces < 2;
     if (!legal) return;
     const contact = contactAtPoint(s.player, h.pos, h.bounces > 0, ball.flight);
-    const swing = beginSwing(press.button, time, contact, { timing: press.lead >= 0 ? gradeTiming(press.lead) : undefined });
+    const swing = beginSwing(press.button, time, contact, {
+      timing: press.lead >= 0 ? gradeTiming(press.lead, press.button === 'power') : undefined,
+    });
     swing.rewind = { pos: h.pos, vel: h.vel, spin: h.spin, rolling: h.rolling, bounces: h.bounces, ago: time - h.t };
     s.player.swing = swing;
   }
@@ -636,6 +638,7 @@ export class MatchMode implements GameMode {
         grade: report.timing.grade,
         mph: report.mph,
         powered: sw.button === 'power',
+        low: report.lowAttack > 0,
       });
       if (fault) this.endRally(fault);
       else this.onGoodHit(s, report);
@@ -659,7 +662,14 @@ export class MatchMode implements GameMode {
     const fault = this.referee.onHit(s.player.side, rw.bounces > 0, s.player.pos.z, time);
     const report = executeShot(ball, s.player, sw, s.human!.aim);
     this.afterHit(s, time);
-    this.listener?.hit({ team: s.team, kind: report.kind, grade: report.timing.grade, mph: report.mph, powered: sw.button === 'power' });
+    this.listener?.hit({
+      team: s.team,
+      kind: report.kind,
+      grade: report.timing.grade,
+      mph: report.mph,
+      powered: sw.button === 'power',
+      low: report.lowAttack > 0,
+    });
     if (fault) {
       this.endRally(fault);
       return;
@@ -748,7 +758,7 @@ export class MatchMode implements GameMode {
     if (!s.human || s.remote) return;
     const g = GRADE_TEXT[report.timing.grade];
     const powered = s.player.swing?.button === 'power';
-    if (report.timing.grade === 'perfect') {
+    if (report.timing.grade === 'perfect' && !(powered && report.lowAttack > 0)) {
       this.perfects++;
       this.w.fx?.burst(this.w.ball.pos, 1, true);
       // A Perfect put-away or power shot gets a tiny freeze-frame and a camera kick.
@@ -757,7 +767,8 @@ export class MatchMode implements GameMode {
         this.w.fx?.shake(powered ? 0.7 : 0.5);
       }
     }
-    const label = powered && report.timing.grade === 'perfect' ? 'POWER!' : g.text;
+    const tooLow = powered && report.lowAttack > 0;
+    const label = tooLow ? 'Too low to attack!' : powered && report.timing.grade === 'perfect' ? 'POWER!' : g.text;
     if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.tag(label, g.kind, overHead(s.player));
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }

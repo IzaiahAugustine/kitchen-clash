@@ -68,8 +68,8 @@ const SPECS: Record<ShotKind, ShotSpec> = {
   reset: { depth: [3.5, 6.5], time: 1.25, spin: 0, clearance: 0.3, width: 7.5 },
   lob: { depth: [17.5, 20.5], time: 2.2, spin: 30, clearance: 2.5, width: 7 },
   serve: { depth: [12, 19], time: 1.25, spin: 20, clearance: 1.0, width: 7 },
-  speedup: { depth: [8, 15], time: 0.42, spin: 40, clearance: 0.06, width: 7.5 },
-  blast: { depth: [14, 20], time: 0.5, spin: 75, clearance: 0.12, width: 8.5 },
+  speedup: { depth: [8, 15], time: 0.46, spin: 40, clearance: 0.06, width: 7.5 },
+  blast: { depth: [14, 20], time: 0.54, spin: 75, clearance: 0.12, width: 8.5 },
 };
 
 /** Aim from the stick while swinging: x = hitter's right, y = deeper. Each -1..1. */
@@ -87,6 +87,21 @@ export interface ShotPlan {
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
+
+/** Net height (ft) the ball has to be above to attack it near the net. */
+const ATTACK_HEIGHT = 2.7;
+/** Within this distance of the net, low balls can't be attacked. */
+const ATTACK_ZONE = 12;
+
+/**
+ * Power off a ball below net height near the net can't be hit down: it has to go up to clear
+ * the net, so it pops up (easy to smash back) or sails long. 0 = fine, 1 = hopeless.
+ * This is why low dinks matter: they can't be attacked.
+ */
+export function lowAttackPenalty(kind: ShotKind, from: Vector3, powered: boolean): number {
+  if (!powered || kind === 'smash' || Math.abs(from.z) > ATTACK_ZONE || from.y >= ATTACK_HEIGHT) return 0;
+  return Math.min(1, Math.max(0.35, (ATTACK_HEIGHT - from.y) / 1.6));
+}
 
 /** Turns a shot kind + aim + timing into a landing target and shape. */
 export function planShot(
@@ -110,6 +125,7 @@ export function planShot(
 
   const power = kind === 'drive' || kind === 'smash' || kind === 'speedup' || kind === 'blast';
   if (powered && kind === 'smash') time *= 0.8;
+  const low = lowAttackPenalty(kind, from, powered);
   if (timing.grade === 'perfect') {
     scatter = powered ? 0.3 : 0.35;
     if (power) time *= powered ? 0.88 : 0.9;
@@ -144,6 +160,14 @@ export function planShot(
       clearance = spec.clearance * 0.3;
     }
     scatter = 1.5;
+  }
+
+  if (low > 0) {
+    // Attacking a low ball near the net: it floats up slow and high, or sails long.
+    time *= 1 + 0.9 * low;
+    clearance = 0.8 + 2 * low;
+    depth += rand(0, 5) * low;
+    scatter = Math.max(scatter, 1.5);
   }
 
   const target = new Vector3(

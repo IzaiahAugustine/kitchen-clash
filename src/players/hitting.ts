@@ -5,7 +5,7 @@ import type { PathSample } from '../physics/predict';
 import { solveShot } from '../physics/trajectory';
 import { BODY, strikeGeometry, type Hand } from './body';
 import { LUNGE_REACH, STRETCH_REACH, type Contact, type Player, type Swing } from './player';
-import { chooseShotKind, planShot, type Aim, type ShotButton, type ShotKind, type Timing } from './shots';
+import { chooseShotKind, lowAttackPenalty, planShot, type Aim, type ShotButton, type ShotKind, type Timing } from './shots';
 import { buildSwingPoses, styleFor } from './swingPoses';
 
 /** Pressing the button this long before contact is a Perfect. */
@@ -15,11 +15,12 @@ export const MAX_EARLY_LEAD = 0.85;
 export const MIN_CONTACT_HEIGHT = 0.6;
 export const MAX_CONTACT_HEIGHT = 6.4;
 
-export function gradeTiming(lead: number): Timing {
+/** @param power Power shots demand sharper timing: a narrower Perfect window. */
+export function gradeTiming(lead: number, power = false): Timing {
   const d = lead - IDEAL_LEAD;
   const error = Math.abs(d);
-  if (error <= 0.05) return { grade: 'perfect', error };
-  if (error <= 0.12) return { grade: 'good', error };
+  if (error <= (power ? 0.035 : 0.05)) return { grade: 'perfect', error };
+  if (error <= (power ? 0.09 : 0.12)) return { grade: 'good', error };
   return { grade: d > 0 ? 'early' : 'late', error };
 }
 
@@ -173,7 +174,7 @@ export function beginSwing(
     contactAt,
     endAt: contactAt + 0.3,
     contact,
-    timing: opts.timing ?? gradeTiming(contact.t),
+    timing: opts.timing ?? gradeTiming(contact.t, button === 'power'),
     poses: buildSwingPoses(styleFor(kind), contact.hand, local, g.crouch),
     resolved: false,
     feed: opts.feed,
@@ -210,6 +211,8 @@ export function chooseHumanContact(player: Player, q: ContactQuery, flight: numb
 }
 
 export interface ShotReport {
+  /** Power off a low ball near the net (0 = none, 1 = badly): see lowAttackPenalty. */
+  lowAttack: number;
   kind: ShotKind;
   mph: number;
   timing: Timing;
@@ -231,5 +234,11 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
   });
   ball.launch(from, sol.velocity, plan.spin);
   swing.resolved = true;
-  return { kind, mph: sol.velocity.length() * 0.6818, timing, target: plan.target };
+  return {
+    kind,
+    mph: sol.velocity.length() * 0.6818,
+    timing,
+    target: plan.target,
+    lowAttack: swing.plan ? 0 : lowAttackPenalty(kind, from, swing.button === 'power'),
+  };
 }
