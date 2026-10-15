@@ -3,7 +3,8 @@ import type { GameMode, World } from '../game/mode';
 import { MatchMode, type MatchResult } from '../game/matchMode';
 import type { BallEvent } from '../physics/ball';
 import type { Player } from '../players/player';
-import type { ShotButton } from '../players/shots';
+import type { ShotButton, ShotKind, ShotPlan, Timing } from '../players/shots';
+import { Vector3 } from 'three';
 import type { ScoreConfig } from '../rules/scoring';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
@@ -31,6 +32,20 @@ export function swingDesc(p: Player): SwingDesc | null {
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/** A shot plan as numbers for the network: target x/z, flight time, spin x/y/z, net clearance. */
+export function encodePlan(p: ShotPlan): (number | null)[] {
+  return [p.target.x, p.target.z, p.flightTime, p.spin.x, p.spin.y, p.spin.z, p.clearance ?? null];
+}
+
+export function decodePlan(a: (number | null)[]): ShotPlan {
+  return {
+    target: new Vector3(a[0] ?? 0, 0, a[1] ?? 0),
+    flightTime: a[2] ?? 1,
+    spin: new Vector3(a[3] ?? 0, a[4] ?? 0, a[5] ?? 0),
+    clearance: a[6] ?? undefined,
+  };
+}
 
 /**
  * Online match, host side: runs the real match (ball, rules, score) with the friend in the
@@ -88,10 +103,11 @@ export class OnlineHost implements GameMode {
       hit: (i) => send({ t: 'hit', ...i }),
       gameOver: (r: MatchResult) => send({ t: 'over', result: { ...r, names: [hostName, 'YOU'] } }),
     };
-    channel.onMessage = (m) => this.receive(m);
-    channel.onClose = () => this.onGone();
     this.hostName = hostName;
     this.scoring = scoring;
+    // Last: attaching the handler can deliver messages that arrived early (the guest's 'ready').
+    channel.onMessage = (m) => this.receive(m);
+    channel.onClose = () => this.onGone();
   }
 
   private hostName: string;
@@ -118,6 +134,9 @@ export class OnlineHost implements GameMode {
           lead: m.lead as number,
           aim: { x: m.ax as number, y: m.ay as number },
           at: typeof m.at === 'number' ? m.at : undefined,
+          plan: Array.isArray(m.p) ? decodePlan(m.p as (number | null)[]) : undefined,
+          kind: typeof m.k === 'string' ? (m.k as ShotKind) : undefined,
+          timing: typeof m.tg === 'string' ? { grade: m.tg as Timing['grade'], error: m.te as number } : undefined,
         });
         break;
       case 'ready':

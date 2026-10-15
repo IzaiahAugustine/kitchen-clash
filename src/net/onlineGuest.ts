@@ -6,24 +6,26 @@ import { Ball } from '../physics/ball';
 import { PHYS } from '../physics/constants';
 import { predictPath, type PathSample } from '../physics/predict';
 import { strikeGeometry } from '../players/body';
-import { MAX_EARLY_LEAD, beginSwing, chooseHumanContact, findContact } from '../players/hitting';
+import { MAX_EARLY_LEAD, beginSwing, chooseHumanContact, executeShot, findContact } from '../players/hitting';
 import { HumanController } from '../players/humanController';
 import { PALETTES } from '../players/palette';
 import { Player, type Swing } from '../players/player';
 import { PlayerView } from '../players/playerView';
-import { SHOT_NAMES, type ShotButton, type ShotKind } from '../players/shots';
+import { SHOT_NAMES, planShot, spinStreakTiming, type ShotButton, type ShotKind } from '../players/shots';
 import { buildSwingPoses, styleFor } from '../players/swingPoses';
 import { FAULT_TEXT, type FaultReason } from '../rules/referee';
 import { DEFAULT_SCORING, Score, type ScoreConfig, type Team } from '../rules/scoring';
 import { clampServer, type ServeSetup } from '../rules/serve';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
-import type { SwingDesc } from './onlineHost';
+import { encodePlan, type SwingDesc } from './onlineHost';
 
 /** How often we send our position (per second). */
 const INPUT_RATE = { p2p: 30, relay: 10, loopback: 30 };
 /** The host's player is drawn this far in the past, so there are always two snapshots to blend. */
 const INTERP_DELAY = 0.1;
+/** How long (s) our own hit is trusted before the host has to confirm it. */
+const PREDICT_HOLD = 1.0;
 
 const ME: Team = 1;
 const overHead = (p: Player) => new Vector3(p.pos.x, 6.8, p.pos.z);
@@ -114,6 +116,9 @@ export class OnlineGuest implements GameMode {
 
   private gotHello = false;
   private lastSnapAt = -Infinity;
+  /** Flight number of our own predicted hit, and until when to trust it over older snapshots. */
+  private predictedFlight = -1;
+  private predictUntil = 0;
   private readyTimer: ReturnType<typeof setTimeout> | undefined;
 
   leave(): void {
@@ -247,6 +252,14 @@ export class OnlineGuest implements GameMode {
     // the ball backward, so only use the newest.
     if ((m.h as number) <= this.lastSnapAt) return;
     this.lastSnapAt = m.h as number;
+    // We just hit the ball ourselves: snapshots from before the host saw that hit would pull
+    // the ball back onto its old path. Use them for the host's position only.
+    if ((m.f as number) < this.predictedFlight && this.now < this.predictUntil) {
+      const hp = m.hp as number[];
+      this.samples.push({ h: m.h as number, x: hp[0], z: hp[1], vx: hp[2], vz: hp[3] });
+      if (this.samples.length > 20) this.samples.shift();
+      return;
+    }
     this.phase = m.ph as string;
     this.lastHitterTeam = m.lh as number;
     this.bounces = m.bc as number;
@@ -364,11 +377,28 @@ export class OnlineGuest implements GameMode {
     const swing = beginSwing(button, time, contact);
     me.swing = swing;
     if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(me));
+    // Decide the shot now, on our screen, so we can play it the instant we make contact
+    // instead of waiting a round trip for the host. The host plays the exact same shot.
+    if (swing.contact && swing.timing) {
+      const ball = this.w.ball;
+      const spun = button === 'spin';
+      if (spun) swing.timing = spinStreakTiming(swing.timing, me.spinStreak);
+      swing.plan = planShot(swing.kind as ShotKind, swing.contact.pos, me.side, swing.hand, aim, swing.timing, spun, {
+        incomingSpeed: ball.vel.length(),
+        hitterSpeed: Math.hypot(me.vel.x, me.vel.z),
+        towardNet: -me.side * me.vel.z,
+        volley: !swing.contact.bounced,
+      });
+    }
     if (incoming) {
       this.channel.send(
         {
           t: 'press',
           b: button,
+          k: swing.contact ? swing.kind : undefined,
+          tg: swing.contact ? swing.timing?.grade : undefined,
+          te: swing.contact ? swing.timing?.error : undefined,
+          p: swing.plan ? encodePlan(swing.plan) : undefined,
           lead: contact ? contact.t : -1,
           // When we'll hit it, in the host's clock (our ball is already synced to "host now").
           at: contact && this.haveOffset ? time + this.offset + contact.t : undefined,
@@ -418,10 +448,20 @@ export class OnlineGuest implements GameMode {
   }
 
   fixedUpdate(dt: number, time: number): void {
-    this.me.step(dt, time);
-    const sw = this.me.swing;
-    // Our swing only animates here; the host decides what happens to the ball.
-    if (sw && !sw.resolved && time >= sw.contactAt) sw.resolved = true;
+    const me = this.me;
+    me.step(dt, time);
+    const sw = me.swing;
+    if (!sw || sw.resolved || time < sw.contactAt) return;
+    sw.resolved = true;
+    // Our own hit: send the ball off right now (the host plays the same shot and confirms it).
+    const ball = this.w.ball;
+    if (!sw.plan || !sw.contact || !ball.inPlay || ball.flight !== sw.contact.flight || this.phase !== 'rally') return;
+    if (this.lastHitterTeam === ME) return;
+    executeShot(ball, me, sw, this.ctl.aim);
+    this.predictedFlight = ball.flight;
+    this.predictUntil = time + PREDICT_HOLD;
+    this.lastHitterTeam = ME;
+    this.bounces = 0;
   }
 
   onBallEvent(): void {}

@@ -22,7 +22,7 @@ import { HumanController } from '../players/humanController';
 import { PALETTES, type Palette } from '../players/palette';
 import { LUNGE_REACH, Player, type Contact, type Swing } from '../players/player';
 import { PlayerView } from '../players/playerView';
-import { SET_ZONE, SHOT_NAMES, type Aim, type ShotButton } from '../players/shots';
+import { SET_ZONE, SHOT_NAMES, type Aim, type ShotButton, type ShotKind, type ShotPlan, type Timing } from '../players/shots';
 import { BounceMarkers } from '../render/markers';
 import { FAULT_TEXT, Referee, type Fault } from '../rules/referee';
 import {
@@ -71,13 +71,25 @@ const courtX = (side: Side, court: Court) => (court === 'right' ? 1 : -1) * side
 export type Controller = 'human' | 'remote' | Difficulty;
 
 /** Input for a seat played by a friend online: their reported position plus queued presses. */
+/** How late (s) a friend's hit may arrive and still be replayed from the moment they made it. */
+const REWIND_WINDOW = 0.6;
+
 export interface RemoteInput {
   pos: { x: number; z: number } | null;
   vel: { x: number; z: number };
   /** One-way network delay (s): their reports are this old by the time they arrive. */
   lag: number;
   /** `lead` = seconds to contact on THEIR screen when pressed (so lag doesn't spoil timing). */
-  presses: { button: ShotButton; lead: number; aim: Aim; at?: number }[];
+  presses: {
+    button: ShotButton;
+    lead: number;
+    aim: Aim;
+    at?: number;
+    /** The shot their screen already played (so both screens send the ball the same way). */
+    plan?: ShotPlan;
+    kind?: ShotKind;
+    timing?: Timing;
+  }[];
 }
 
 /** Key moments of a match, for sending to an online opponent. */
@@ -523,15 +535,16 @@ export class MatchMode implements GameMode {
       s.human!.aim = press.aim;
       if (this.phase === 'preServe' && this.server === s && !p.swing) {
         this.serve(time, press.button, press.aim);
-      } else if (this.phase === 'rally' && press.at !== undefined && time - press.at > 1e-3 && time - press.at <= 0.4) {
+      } else if (this.phase === 'rally' && press.at !== undefined && time - press.at > 1e-3 && time - press.at <= REWIND_WINDOW) {
         this.rewindSwing(s, press, time);
       } else if (this.phase === 'rally' && p.canSwing(time) && this.incomingTo(s.team)) {
         // Hit at the moment their screen chose (sent in our clock), else pick one ourselves.
         const contact =
           (press.at !== undefined ? contactAtTime(p, this.path, press.at - time, this.bouncesSinceHit, ball.flight) : null) ??
           chooseHumanContact(p, this.query(MAX_EARLY_LEAD + 0.3), ball.flight, this.referee.mustLetBounce);
-        const timing = contact && press.lead >= 0 ? gradeTiming(press.lead, press.button === 'spin') : undefined;
-        p.swing = beginSwing(press.button, time, contact, { timing });
+        const timing = press.timing ?? (contact && press.lead >= 0 ? gradeTiming(press.lead, press.button === 'spin') : undefined);
+        p.swing = beginSwing(press.button, time, contact, { timing, kind: contact ? press.kind : undefined });
+        if (contact && press.plan) p.swing.plan = press.plan;
       }
     }
   }
@@ -552,8 +565,10 @@ export class MatchMode implements GameMode {
     if (!legal) return;
     const contact = contactAtPoint(s.player, h.pos, h.bounces > 0, ball.flight);
     const swing = beginSwing(press.button, time, contact, {
-      timing: press.lead >= 0 ? gradeTiming(press.lead, press.button === 'spin') : undefined,
+      timing: press.timing ?? (press.lead >= 0 ? gradeTiming(press.lead, press.button === 'spin') : undefined),
+      kind: press.kind,
     });
+    if (press.plan) swing.plan = press.plan;
     swing.rewind = { pos: h.pos, vel: h.vel, spin: h.spin, rolling: h.rolling, bounces: h.bounces, ago: time - h.t };
     s.player.swing = swing;
   }
@@ -609,7 +624,7 @@ export class MatchMode implements GameMode {
         flight: ball.flight,
         bounces: this.bouncesSinceHit,
       });
-      while (this.ballHistory.length && this.ballHistory[0].t < time - 0.5) this.ballHistory.shift();
+      while (this.ballHistory.length && this.ballHistory[0].t < time - REWIND_WINDOW - 0.1) this.ballHistory.shift();
     }
     for (const s of this.seats) {
       const p = s.player;
@@ -641,7 +656,8 @@ export class MatchMode implements GameMode {
       const canHit =
         this.phase === 'rally' && ball.inPlay && ball.flight === sw.contact.flight && this.lastHitter?.team !== s.team;
       if (!canHit) continue;
-      const reach = reachAtContact(p);
+      // A friend's own screen already judged its reach and played the shot: trust it.
+      const reach = s.remote && sw.plan ? 'ok' : reachAtContact(p);
       if (reach === 'miss') {
         if (s.human) this.w.hud.tag('Too far!', 'bad', overHead(p));
         continue;
