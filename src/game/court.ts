@@ -36,3 +36,11 @@ export type Side = 1 | -1;
 export function sideOf(z: number): Side {
   return z >= 0 ? 1 : -1;
 }
+
+/** How far a player's feet reach from their center (touching the kitchen line counts as in). */
+export const FOOT_REACH = 0.3;
+
+/** Is a player standing at this z in (or on the line of) a kitchen? */
+export function inKitchen(z: number): boolean {
+  return Math.abs(z) <= COURT.kitchenDepth + FOOT_REACH;
+}

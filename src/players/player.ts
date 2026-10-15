@@ -2,7 +2,7 @@ import { Vector3 } from 'three';
 import type { Side } from '../game/court';
 import type { Hand } from './body';
 import type { Palette } from './palette';
-import type { ShotButton, ShotKind, Timing } from './shots';
+import type { ShotButton, ShotKind, ShotPlan, Timing } from './shots';
 import { buildSwingPoses, styleFor, type SwingPoses } from './swingPoses';
 
 /** A planned ball contact: when and where the paddle will meet the ball. */
@@ -36,6 +36,8 @@ export interface Swing {
   note?: string;
   /** Practice feed / serve: hits a held ball, not one in flight. */
   feed?: boolean;
+  /** Pre-planned shot (serves), used instead of planning from aim + timing at contact. */
+  plan?: ShotPlan;
 }
 
 /** Speeding up: a quick first step, but you can't hit top speed instantly. */

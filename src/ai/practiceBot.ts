@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { inKitchen } from '../game/court';
 import type { Ball } from '../physics/ball';
 import type { PathSample } from '../physics/predict';
 import { IDEAL_LEAD, findContact } from '../players/hitting';
@@ -13,6 +14,10 @@ export interface BotContext {
   /** The ball is live and heading to (or already on) this bot's side. */
   incoming: boolean;
   opponent: Player;
+  /** Rules say this hit must come after a bounce (two-bounce rule). */
+  mustLetBounce?: boolean;
+  /** Override where to wait between shots (distance from the net). */
+  homeDepth?: number;
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -36,7 +41,14 @@ export class PracticeBot {
     const p = this.player;
     return findContact(
       p,
-      { path: ctx.path, bouncesSoFar: ctx.bouncesSinceHit, maxTime: 2, slack: 1.0 },
+      {
+        path: ctx.path,
+        bouncesSoFar: ctx.bouncesSinceHit,
+        maxTime: 2,
+        slack: 1.0,
+        // Plays by the rules: lets it bounce during the two-bounce rule or when in the kitchen.
+        mustBounce: !!ctx.mustLetBounce || inKitchen(p.pos.z),
+      },
       ctx.ball.flight,
     );
   }
@@ -47,7 +59,7 @@ export class PracticeBot {
     if (p.swing && p.swing.contact && !p.swing.resolved) return null; // committed, already gliding in
     const contact = ctx.incoming ? this.query(ctx) : null;
     if (!contact) {
-      this.goHome(ctx.ball);
+      this.goHome(ctx.ball, ctx.homeDepth);
       return null;
     }
     if (ctx.ball.flight !== this.plannedFlight) {
@@ -72,10 +84,10 @@ export class PracticeBot {
     this.aim = { x: rand(-0.8, 0.8), y: rand(-0.6, 0.6) };
   }
 
-  private goHome(ball: Ball): void {
+  private goHome(ball: Ball, depth?: number): void {
     const p = this.player;
     const soft = this.lastKind === 'dink' || this.lastKind === 'drop' || this.lastKind === 'reset';
-    const home = new Vector3(Math.max(-5, Math.min(5, ball.pos.x * 0.3)), 0, p.side * (soft ? 8.8 : 18.5));
+    const home = new Vector3(Math.max(-5, Math.min(5, ball.pos.x * 0.3)), 0, p.side * (depth ?? (soft ? 8.8 : 18.5)));
     this.moveToward(home);
   }
 

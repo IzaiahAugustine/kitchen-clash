@@ -11,6 +11,8 @@ npm run dev        # opens http://localhost:5173
 ```
 
 - `npm run build`: typecheck and build for production into `dist/`
+- `npx tsx tools/sim/rules-test.ts`: unit tests for scoring and the referee
+- `npx tsx tools/sim/match-sim.ts [games] [sideout|rally] [timingNoise]`: headless bot-vs-bot games with fault stats
 - `npx tsx tools/sim/practice-sim.ts [seconds] [timingNoise]`: headless bot-vs-bot rally simulation with stats
 - `npm run models`: rebuild the 3D models in `public/models/` from the Blender scripts in `tools/blender/` (needs Blender; set `BLENDER=/path/to/blender` if it's not in `/Applications`)
 
@@ -25,11 +27,15 @@ npm run dev        # opens http://localhost:5173
 | `src/input` | Keyboard + gamepad |
 | `src/players` | Player movement, Blender model + procedural animation, swings, shot selection, timing |
 | `src/ai` | Computer players (phase 2 practice bot) |
+| `src/rules` | Scoring (side-out / rally), referee (faults, two-bounce, kitchen), serve setup |
 | `src/ui` | HUD and pop-up messages |
 | `src/debug` | Ball Lab test harness |
 | `tools/blender` | Python scripts that build the `.glb` models in Blender |
 
-## Debug URL options
+## URL options
+
+- `?scoring=rally`: rally scoring instead of side-out
+- `?practice`: rally practice with no rules or score
 
 - `?lab`: Ball Lab (fire preset shots to test physics); add `&auto` for an auto rally
 - `?autoplay`: a bot plays your side too

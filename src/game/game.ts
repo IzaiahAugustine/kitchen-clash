@@ -14,6 +14,9 @@ import { Stage } from '../render/stage';
 import { Hud } from '../ui/hud';
 import { debugFlag, hasDebugFlag } from './debugFlags';
 import type { GameMode, World } from './mode';
+import { DEFAULT_SCORING } from '../rules/scoring';
+import { Scoreboard } from '../ui/scoreboard';
+import { MatchMode } from './matchMode';
 import { PracticeMode } from './practiceMode';
 
 /**
@@ -33,7 +36,10 @@ export class Game {
   private orbit: OrbitControls | null = null;
   private crowd: Crowd;
 
-  constructor(container: HTMLElement, uiRoot: HTMLElement) {
+  constructor(
+    container: HTMLElement,
+    private uiRoot: HTMLElement,
+  ) {
     this.stage = new Stage(container);
     this.cam = new ArcadeCamera(window.innerWidth / window.innerHeight);
     this.stage.setupPost(this.cam.camera);
@@ -45,7 +51,7 @@ export class Game {
       scene: this.stage.scene,
       ball,
       ballView: new BallView(this.stage.scene),
-      hud: new Hud(uiRoot),
+      hud: new Hud(this.uiRoot),
       keys,
       controls: new Controls(keys),
     };
@@ -59,7 +65,13 @@ export class Game {
   async start(): Promise<void> {
     const lab = hasDebugFlag('lab');
     const [, template] = await Promise.all([loadCourt(this.stage.scene), lab ? null : loadPlayerTemplate()]);
-    this.mode = template ? new PracticeMode(this.world, template) : new BallLab(this.world);
+    if (!template) this.mode = new BallLab(this.world);
+    else if (hasDebugFlag('practice')) this.mode = new PracticeMode(this.world, template);
+    else {
+      const scoreboard = new Scoreboard(this.uiRoot, ['YOU', 'BOT'], ['#ff6b35', '#7b2ff7']);
+      const scoring = debugFlag('scoring') === 'rally' ? 'rally' : 'sideout';
+      this.mode = new MatchMode(this.world, template, scoreboard, { ...DEFAULT_SCORING, mode: scoring });
+    }
     // Debug: `?warp=6` fast-forwards 6 seconds of play before the first frame (for screenshots).
     const warp = Number(debugFlag('warp') ?? 0);
     for (let i = 0; i < warp * 60; i++) this.advance(1 / 60);

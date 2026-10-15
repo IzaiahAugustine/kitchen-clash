@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { COURT, FOOT_REACH, inKitchen } from '../game/court';
 import type { Ball } from '../physics/ball';
 import type { PathSample } from '../physics/predict';
 import { solveShot } from '../physics/trajectory';
@@ -74,14 +75,19 @@ function handFor(player: Player, ballX: number): Hand {
   return (ballX - player.pos.x) * player.right.x >= -0.3 ? 'fore' : 'back';
 }
 
+/** Volleys are planned from behind the kitchen line: auto-movement never walks you into a fault. */
+const VOLLEY_LINE = COURT.kitchenDepth + FOOT_REACH + 0.1;
+
 function makeContact(player: Player, s: PathSample, flight: number, bounced: boolean): Contact {
   const hand = handFor(player, s.x);
   const g = strikeGeometry(s.y, hand);
+  let standZ = s.z - player.forward.z * g.forward;
+  if (!bounced && Math.abs(standZ) < VOLLEY_LINE) standZ = player.side * VOLLEY_LINE;
   return {
     t: s.t,
     pos: new Vector3(s.x, s.y, s.z),
     hand,
-    standAt: new Vector3(s.x - player.right.x * g.lateral, 0, s.z - player.forward.z * g.forward),
+    standAt: new Vector3(s.x - player.right.x * g.lateral, 0, standZ),
     crouch: g.crouch,
     flight,
     bounced,
@@ -155,6 +161,19 @@ export function stretchTiming(t: Timing): Timing {
   return { grade: t.grade === 'early' ? 'early' : 'late', error: Math.max(t.error, 0.16) };
 }
 
+/**
+ * Picks the contact for a human's swing, playing by the rules when possible: while the
+ * two-bounce rule applies, or when standing in the kitchen, it lets the ball bounce first.
+ * Only if that's out of reach does it fall back to a volley (which the referee may fault).
+ */
+export function chooseHumanContact(player: Player, q: ContactQuery, flight: number, mustLetBounce: boolean): Contact | null {
+  if (mustLetBounce || inKitchen(player.pos.z)) {
+    const safe = findContact(player, { ...q, mustBounce: true }, flight);
+    if (safe) return safe;
+  }
+  return findContact(player, q, flight);
+}
+
 export interface ShotReport {
   kind: ShotKind;
   mph: number;
@@ -167,7 +186,7 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
   const kind = swing.kind as ShotKind;
   const timing = swing.timing ?? { grade: 'good', error: 0 };
   const from = ball.pos.clone();
-  const plan = planShot(kind, from, player.side, swing.hand, aim, timing);
+  const plan = swing.plan ?? planShot(kind, from, player.side, swing.hand, aim, timing);
   const sol = solveShot({
     from,
     target: plan.target,

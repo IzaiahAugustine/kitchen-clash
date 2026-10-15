@@ -20,10 +20,17 @@ export class Hud {
     this.panel.innerHTML = html;
   }
 
-  flash(text: string, kind: FlashKind = 'info', ms = 1100): void {
+  /** Big pop-up message, with an optional smaller explanation line under it. */
+  flash(text: string, kind: FlashKind = 'info', ms = 1100, detail?: string): void {
     const el = document.createElement('div');
     el.className = `toast toast-${kind}`;
     el.textContent = text;
+    if (detail) {
+      const d = document.createElement('div');
+      d.className = 'toast-detail';
+      d.textContent = detail;
+      el.appendChild(d);
+    }
     el.style.animationDuration = `${ms}ms`;
     this.toasts.appendChild(el);
     setTimeout(() => el.remove(), ms);
