@@ -213,6 +213,9 @@ export class Game {
 
   private setMode(mode: GameMode): void {
     this.mode?.dispose?.();
+    // A fast-forwarded or slow-mo AI match must never carry its speed into the next mode.
+    this.timeScale = 1;
+    if (this.orbit) this.toggleOrbit();
     this.stage.grace();
     this.effects.setLanding(null);
     this.effects.setServeBox(null);
@@ -800,7 +803,8 @@ export class Game {
 
   private frame(): void {
     const now = performance.now();
-    const dt = Math.min((now - this.lastFrameAt) / 1000, 0.1);
+    // Online, a hitch on one computer must not slow the shared match down, so catch up more.
+    const dt = Math.min((now - this.lastFrameAt) / 1000, this.mode?.online ? 0.25 : 0.1);
     this.lastFrameAt = now;
     this.advance(dt);
     // The title art covers the 3D scene, so don't spend the GPU drawing it.
@@ -901,6 +905,11 @@ export class Game {
       this.showPause();
       return;
     }
+    // Speed and camera hotkeys: only when watching AI vs AI (or with ?debug), never online.
+    // F sits next to WASD and C is a shot key, so these used to fire by accident mid-match.
+    const cur = this.current;
+    const watching = typeof cur === 'object' && 'near' in cur && cur.near !== 'human' && this.state === 'playing';
+    if (this.mode?.online || !(watching || hasDebugFlag('debug'))) return;
     if (k.wasPressed('KeyT')) {
       this.timeScale = this.timeScale === 1 ? 0.25 : 1;
       this.world.hud.flash(this.timeScale === 1 ? 'Normal speed' : 'Slow-mo');

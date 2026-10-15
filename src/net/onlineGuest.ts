@@ -113,6 +113,7 @@ export class OnlineGuest implements GameMode {
   }
 
   private gotHello = false;
+  private lastSnapAt = -Infinity;
   private readyTimer: ReturnType<typeof setTimeout> | undefined;
 
   leave(): void {
@@ -242,6 +243,10 @@ export class OnlineGuest implements GameMode {
 
   /** Ball: re-simulate from the snapshot to "now" and blend toward it, or snap on a new shot. */
   private onSnapshot(m: Record<string, unknown>): void {
+    // Snapshots travel on the fast, unordered channel: an older one arriving late would yank
+    // the ball backward, so only use the newest.
+    if ((m.h as number) <= this.lastSnapAt) return;
+    this.lastSnapAt = m.h as number;
     this.phase = m.ph as string;
     this.lastHitterTeam = m.lh as number;
     this.bounces = m.bc as number;
