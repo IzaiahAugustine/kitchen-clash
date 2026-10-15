@@ -1,4 +1,4 @@
-"""Builds the Pickle Pop! court environment and exports it as a .glb.
+"""Builds the Kitchen Clash court environment and exports it as a .glb.
 
 Run via `npm run models` (headless Blender). Units are feet, 1 Blender unit = 1 ft.
 All geometry is authored in *game* coordinates (x = right, y = up, z = toward the near

@@ -42,6 +42,8 @@ export class Ball implements FlightState {
   /** False when the ball is held (serve) or has come to rest. */
   inPlay = false;
   rolling = false;
+  /** Increments on every launch, so a planned contact can tell if the ball has since been hit. */
+  flight = 0;
   private events: BallEvent[] = [];
 
   launch(pos: Vector3, vel: Vector3, spin: Vector3): void {
@@ -50,6 +52,7 @@ export class Ball implements FlightState {
     this.spin.copy(spin);
     this.inPlay = true;
     this.rolling = false;
+    this.flight++;
   }
 
   /** Freezes the ball at a position (e.g. in the server's hand). */

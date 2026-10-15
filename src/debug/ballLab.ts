@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { isInCourt, type Side } from '../game/court';
-import type { Keyboard } from '../input/keyboard';
-import type { Ball, BallEvent } from '../physics/ball';
+import { hasDebugFlag } from '../game/debugFlags';
+import type { GameMode, World } from '../game/mode';
+import type { BallEvent } from '../physics/ball';
 import { solveShot, topspin } from '../physics/trajectory';
-import type { BallView } from '../render/ballView';
-import type { Hud } from '../ui/hud';
+import { BounceMarkers } from '../render/markers';
 
 /**
  * Phase 1 test harness: fires preset shots so the ball physics can be checked by eye
@@ -91,12 +91,7 @@ const PRESETS: Preset[] = [
 const RALLY = PRESETS.filter((p) => p.rally);
 const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)];
 
-interface Marker {
-  mesh: THREE.Mesh;
-  age: number;
-}
-
-export class BallLab {
+export class BallLab implements GameMode {
   private side: Side = 1;
   private auto = false;
   private autoTimer = 0;
@@ -104,30 +99,30 @@ export class BallLab {
   private lastInfo = '';
   private bounces: boolean[] = [];
   private netted = false;
-  private markers: Marker[] = [];
-  private markerGeo = new THREE.RingGeometry(0.22, 0.42, 28).rotateX(-Math.PI / 2);
+  private markers: BounceMarkers;
 
-  constructor(
-    private scene: THREE.Scene,
-    private ball: Ball,
-    private ballView: BallView,
-    private keys: Keyboard,
-    private hud: Hud,
-  ) {
+  constructor(private w: World) {
+    this.markers = new BounceMarkers(w.scene);
     // `?auto` in the URL starts with auto rally on (handy for watching / screenshots).
-    this.auto = new URLSearchParams(location.search).has('auto');
+    this.auto = hasDebugFlag('auto');
+  }
+
+  fixedUpdate(): void {}
+
+  cameraTargetX(): number {
+    return this.w.ball.pos.x;
   }
 
   /** @param dt scaled game time (slow-mo aware). */
   update(dt: number): void {
-    const k = this.keys;
+    const k = this.w.keys;
     for (const p of PRESETS) if (k.wasPressed(p.key)) this.fire(p);
     if (k.wasPressed('KeyR')) this.fire(pick(RALLY));
     if (k.wasPressed('KeyF')) this.side = this.side === 1 ? -1 : 1;
     if (k.wasPressed('KeyA')) {
       this.auto = !this.auto;
       this.autoTimer = 0.2;
-      this.hud.flash(this.auto ? 'Auto rally ON' : 'Auto rally OFF');
+      this.w.hud.flash(this.auto ? 'Auto rally ON' : 'Auto rally OFF');
     }
 
     if (this.auto && this.shotFinished()) {
@@ -138,32 +133,22 @@ export class BallLab {
       }
     }
 
-    for (let i = this.markers.length - 1; i >= 0; i--) {
-      const m = this.markers[i];
-      m.age += dt;
-      const mat = m.mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = Math.max(0, 1 - m.age / 3);
-      if (m.age > 3) {
-        this.scene.remove(m.mesh);
-        mat.dispose();
-        this.markers.splice(i, 1);
-      }
-    }
+    this.markers.update(dt);
   }
 
   onBallEvent(e: BallEvent): void {
     if (e.type === 'net') {
       this.netted = true;
-      this.hud.flash('NET!', 'bad');
+      this.w.hud.flash('NET!', 'bad');
     } else if (e.type === 'netcord') {
-      this.hud.flash('Net cord!', 'info');
+      this.w.hud.flash('Net cord!', 'info');
     } else if (e.type === 'bounce' && this.bounces.length < 2) {
       // First bounce has to be on the other side of the net to count.
       const correctSide = this.bounces.length > 0 || Math.sign(e.z) === -this.side;
       const inside = isInCourt(e.x, e.z) && correctSide;
       this.bounces.push(inside);
-      this.addMarker(e.x, e.z, inside);
-      if (this.bounces.length === 1) this.hud.flash(inside ? 'IN' : 'OUT', inside ? 'good' : 'bad', 700);
+      this.markers.add(e.x, e.z, inside);
+      if (this.bounces.length === 1) this.w.hud.flash(inside ? 'IN' : 'OUT', inside ? 'good' : 'bad', 700);
     }
   }
 
@@ -172,7 +157,7 @@ export class BallLab {
     const bounceText = this.bounces.length
       ? this.bounces.map((ok, i) => `Bounce ${i + 1}: <span class="${ok ? 'ok' : 'bad'}">${ok ? 'IN' : 'OUT'}</span>`).join(' &nbsp; ')
       : this.netted ? '<span class="bad">Hit the net</span>' : '';
-    const b = this.ball;
+    const b = this.w.ball;
     const live = `Ball height ${Math.max(0, b.pos.y - 0.12).toFixed(1)} ft · speed ${(b.vel.length() * 0.6818).toFixed(0)} mph`;
     return `
       <div class="title">Ball Lab <small>Phase 1</small></div>
@@ -186,13 +171,14 @@ export class BallLab {
   }
 
   private shotFinished(): boolean {
-    return !this.ball.inPlay || this.bounces.length >= 2 || (this.netted && this.ball.pos.y < 0.3);
+    const b = this.w.ball;
+    return !b.inPlay || this.bounces.length >= 2 || (this.netted && b.pos.y < 0.3);
   }
 
   private fire(p: Preset): void {
     const shot = p.build(this.side);
-    this.ball.launch(shot.from, shot.velocity, shot.spin);
-    this.ballView.clearTrail();
+    this.w.ball.launch(shot.from, shot.velocity, shot.spin);
+    this.w.ballView.clearTrail();
     this.bounces = [];
     this.netted = false;
     this.autoTimer = 0.6;
@@ -205,16 +191,5 @@ export class BallLab {
     const c = shot.netClearance;
     const netText = c === null ? '' : c >= 0 ? ` · clears net by ${(c * 12).toFixed(0)}"` : ' · aimed at the tape';
     this.lastInfo = `${mph.toFixed(0)} mph · ${spinText}${netText}`;
-  }
-
-  private addMarker(x: number, z: number, inside: boolean): void {
-    const mesh = new THREE.Mesh(
-      this.markerGeo,
-      new THREE.MeshBasicMaterial({ color: inside ? 0x3dff7a : 0xff3d5a, transparent: true, depthWrite: false }),
-    );
-    mesh.position.set(x, 0.05, z);
-    mesh.renderOrder = 2;
-    this.scene.add(mesh);
-    this.markers.push({ mesh, age: 0 });
   }
 }

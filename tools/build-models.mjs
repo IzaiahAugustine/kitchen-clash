@@ -7,7 +7,10 @@ import { resolve } from 'node:path';
 const candidates = [process.env.BLENDER, '/Applications/Blender.app/Contents/MacOS/Blender'].filter(Boolean);
 const blender = candidates.find((c) => existsSync(c)) ?? 'blender';
 
-const jobs = [['tools/blender/build_court.py', 'public/models/court.glb']];
+const jobs = [
+  ['tools/blender/build_court.py', 'public/models/court.glb'],
+  ['tools/blender/build_player.py', 'public/models/player.glb'],
+];
 
 mkdirSync('public/models', { recursive: true });
 for (const [script, out] of jobs) {

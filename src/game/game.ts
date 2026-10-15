@@ -2,25 +2,31 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ArcadeCamera } from '../camera/arcadeCamera';
 import { BallLab } from '../debug/ballLab';
+import { Controls } from '../input/controls';
 import { Keyboard } from '../input/keyboard';
 import { Ball } from '../physics/ball';
 import { PHYS } from '../physics/constants';
+import { loadPlayerTemplate } from '../players/playerView';
 import { BallView } from '../render/ballView';
 import { loadCourt } from '../render/courtView';
 import { Stage } from '../render/stage';
 import { Hud } from '../ui/hud';
+import { debugFlag, hasDebugFlag } from './debugFlags';
+import type { GameMode, World } from './mode';
+import { PracticeMode } from './practiceMode';
 
-/** Top-level game: owns the loop, the world and the active mode (just the Ball Lab in phase 1). */
+/**
+ * Top-level game: owns the renderer, the loop and the shared world, and runs the active
+ * mode. `?lab` in the URL opens the Ball Lab instead of practice.
+ */
 export class Game {
   private stage: Stage;
   private cam: ArcadeCamera;
-  private keys = new Keyboard();
-  private hud: Hud;
-  private ball = new Ball();
-  private ballView: BallView;
-  private lab: BallLab;
-  private clock = new THREE.Clock();
+  private world: World;
+  private mode: GameMode | null = null;
+  private lastFrameAt = 0;
   private accumulator = 0;
+  private time = 0;
   private timeScale = 1;
   private paused = false;
   private orbit: OrbitControls | null = null;
@@ -28,10 +34,17 @@ export class Game {
   constructor(container: HTMLElement, uiRoot: HTMLElement) {
     this.stage = new Stage(container);
     this.cam = new ArcadeCamera(window.innerWidth / window.innerHeight);
-    this.hud = new Hud(uiRoot);
-    this.ballView = new BallView(this.stage.scene);
-    this.lab = new BallLab(this.stage.scene, this.ball, this.ballView, this.keys, this.hud);
-    this.ball.hold(new THREE.Vector3(0, 3, 21));
+    const keys = new Keyboard();
+    const ball = new Ball();
+    ball.hold(new THREE.Vector3(0, 3, 21));
+    this.world = {
+      scene: this.stage.scene,
+      ball,
+      ballView: new BallView(this.stage.scene),
+      hud: new Hud(uiRoot),
+      keys,
+      controls: new Controls(keys),
+    };
 
     window.addEventListener('resize', () => {
       this.stage.resize();
@@ -40,41 +53,58 @@ export class Game {
   }
 
   async start(): Promise<void> {
-    await loadCourt(this.stage.scene);
-    this.clock.start();
+    const lab = hasDebugFlag('lab');
+    const [, template] = await Promise.all([loadCourt(this.stage.scene), lab ? null : loadPlayerTemplate()]);
+    this.mode = template ? new PracticeMode(this.world, template) : new BallLab(this.world);
+    // Debug: `?warp=6` fast-forwards 6 seconds of play before the first frame (for screenshots).
+    const warp = Number(debugFlag('warp') ?? 0);
+    for (let i = 0; i < warp * 60; i++) this.advance(1 / 60);
+    this.lastFrameAt = performance.now();
     this.stage.renderer.setAnimationLoop(() => this.frame());
   }
 
   private frame(): void {
-    const dt = Math.min(this.clock.getDelta(), 0.1);
-    this.handleGlobalKeys();
+    const now = performance.now();
+    const dt = Math.min((now - this.lastFrameAt) / 1000, 0.1);
+    this.lastFrameAt = now;
+    this.advance(dt);
+    this.stage.renderer.render(this.stage.scene, this.cam.camera);
+    this.world.keys.endFrame();
+  }
+
+  /** Runs one frame of game logic (everything except drawing). */
+  private advance(dt: number): void {
+    const mode = this.mode!;
+    const { ball, ballView, hud, controls } = this.world;
+    const input = controls.update();
+    this.handleGlobalKeys(input.pause);
 
     const gameDt = this.paused ? 0 : dt * this.timeScale;
     this.accumulator += gameDt;
     while (this.accumulator >= PHYS.fixedDt) {
-      this.ball.step(PHYS.fixedDt);
+      mode.fixedUpdate(PHYS.fixedDt, this.time);
+      ball.step(PHYS.fixedDt);
+      this.time += PHYS.fixedDt;
+      for (const e of ball.drainEvents()) mode.onBallEvent(e, this.time);
       this.accumulator -= PHYS.fixedDt;
     }
-    for (const e of this.ball.drainEvents()) this.lab.onBallEvent(e);
 
-    this.lab.update(gameDt);
-    this.ballView.update(this.ball, gameDt);
+    if (!this.paused) mode.update(gameDt, this.time);
+    ballView.update(ball, gameDt);
 
     if (this.orbit) this.orbit.update();
-    else this.cam.update(dt, this.ball.pos.x);
+    else this.cam.update(dt, mode.cameraTargetX());
 
-    this.hud.setPanel(this.lab.describe() + this.statusLine());
-    this.stage.renderer.render(this.stage.scene, this.cam.camera);
-    this.keys.endFrame();
+    hud.setPanel(mode.describe() + this.statusLine());
   }
 
-  private handleGlobalKeys(): void {
-    const k = this.keys;
-    if (k.wasPressed('Space')) {
+  private handleGlobalKeys(pausePressed: boolean): void {
+    const k = this.world.keys;
+    if (k.wasPressed('KeyT')) {
       this.timeScale = this.timeScale === 1 ? 0.25 : 1;
-      this.hud.flash(this.timeScale === 1 ? 'Normal speed' : 'Slow-mo');
+      this.world.hud.flash(this.timeScale === 1 ? 'Normal speed' : 'Slow-mo');
     }
-    if (k.wasPressed('KeyP')) this.paused = !this.paused;
+    if (pausePressed) this.paused = !this.paused;
     if (k.wasPressed('KeyC')) this.toggleOrbit();
   }
 
@@ -82,7 +112,6 @@ export class Game {
     if (this.orbit) {
       this.orbit.dispose();
       this.orbit = null;
-      this.cam.update(0, this.ball.pos.x);
     } else {
       this.orbit = new OrbitControls(this.cam.camera, this.stage.renderer.domElement);
       this.orbit.target.set(0, 0, 0);
@@ -96,6 +125,6 @@ export class Game {
       this.timeScale !== 1 ? '<span class="ok">SLOW-MO</span>' : '',
       this.orbit ? '<span class="ok">FREE CAM</span> (drag to orbit, scroll to zoom)' : '',
     ].filter(Boolean);
-    return `<div class="dim"><b>Space</b> Slow-mo · <b>P</b> Pause · <b>C</b> Free camera ${flags.join(' ')}</div>`;
+    return `<div class="dim"><b>P</b> / Start Pause · <b>T</b> Slow-mo · <b>C</b> Free camera ${flags.join(' ')}</div>`;
   }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "pickle-pop",
+  "name": "kitchen-clash",
   "version": "0.1.0",
   "scripts": {
     "dev": "vite",
@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "models": "node tools/build-models.mjs"
   },
-  "description": "Pickle Pop! — an arcade-style 3D pickleball game for the browser",
+  "description": "Kitchen Clash — an arcade-style 3D pickleball game for the browser",
   "dependencies": {
     "three": "^0.186.1"
   },
