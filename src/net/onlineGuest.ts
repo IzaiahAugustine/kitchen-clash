@@ -71,6 +71,8 @@ export class OnlineGuest implements GameMode {
   onGameOver: ((r: MatchResult) => void) | null = null;
   onNewGame: () => void = () => {};
   onGone: () => void = () => {};
+  /** The host's court (sent in 'hello'). */
+  onVenue: (id: string) => void = () => {};
 
   constructor(
     private w: World,
@@ -126,6 +128,7 @@ export class OnlineGuest implements GameMode {
         this.hostName = m.hostName as string;
         this.score = new Score({ ...(m.scoring as ScoreConfig), teamSize: 1 }, 0);
         this.scoreboard?.setNames([this.hostName.toUpperCase().slice(0, 14), 'YOU']);
+        if (typeof m.venue === 'string') this.onVenue(m.venue);
         break;
       case 'pong': {
         const rtt = Math.max(0, this.now - (m.c as number));
@@ -293,7 +296,7 @@ export class OnlineGuest implements GameMode {
   update(dt: number, time: number): void {
     this.now = time;
     const ball = this.w.ball;
-    this.path = predictPath(ball);
+    this.path = predictPath(ball, 1.8, this.path);
     const me = this.me;
 
     this.pingIn -= dt;

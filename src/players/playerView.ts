@@ -67,6 +67,7 @@ const SURFACE: Record<string, THREE.MeshStandardMaterialParameters> = {
   iris: { roughness: 0.15 },
   pupil: { roughness: 0.1 },
   paddle: { roughness: 0.3 },
+  crown: { roughness: 0.25, metalness: 0.8 },
   paddle_edge: { roughness: 0.4 },
   shoe: { roughness: 0.6 },
 };
@@ -97,13 +98,19 @@ export class PlayerView {
       if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
     });
     const materials = new Map<string, THREE.Material>();
-    const colors = { ...palette, lips: lipColor(palette.skin) } as unknown as Record<string, string>;
+    const colors = { ...palette, lips: lipColor(palette.skin), hair_tail: palette.hair, crown: '#ffc83d' } as unknown as Record<string, string>;
     for (const mesh of meshes) {
       const n = mesh.name;
       const src = mesh.material as THREE.MeshStandardMaterial;
       const slot = src.name;
-      // Only show the headwear this player wears.
-      if ((slot === 'cap' && palette.headwear !== 'cap') || (slot === 'headband' && palette.headwear !== 'headband')) {
+      // Only show the headwear and hair style this player has.
+      const hidden =
+        (slot === 'cap' && palette.headwear !== 'cap') ||
+        (slot === 'headband' && palette.headwear !== 'headband') ||
+        (slot === 'crown' && palette.headwear !== 'crown') ||
+        (slot === 'hair_tail' && palette.hairStyle !== 'ponytail') ||
+        (slot === 'hair' && n.startsWith('ol_') && palette.hairStyle === 'shaved');
+      if (hidden) {
         mesh.visible = false;
         continue;
       }

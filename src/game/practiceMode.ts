@@ -13,7 +13,7 @@ import {
   type ShotReport,
 } from '../players/hitting';
 import { HumanController } from '../players/humanController';
-import { PALETTES } from '../players/palette';
+import { PALETTES, type Palette } from '../players/palette';
 import { LUNGE_REACH, Player } from '../players/player';
 import { PlayerView } from '../players/playerView';
 import { SHOT_NAMES, type ShotKind } from '../players/shots';
@@ -65,8 +65,9 @@ export class PracticeMode implements GameMode {
     private w: World,
     template: Object3D | null,
     autopilot = hasDebugFlag('autoplay'),
+    palette?: Palette,
   ) {
-    this.human = new Player('You', 1, PALETTES.hero);
+    this.human = new Player('You', 1, palette ?? PALETTES.hero);
     this.human.pos.set(2, 0, 19);
     this.bot = new Player('Practice Bot', -1, PALETTES.rival);
     this.bot.pos.set(0, 0, -18);
@@ -94,7 +95,7 @@ export class PracticeMode implements GameMode {
     const input = controls.frame;
     if (input.feed && !this.live) this.nextFeedIn = 0;
 
-    this.path = predictPath(ball);
+    this.path = predictPath(ball, 1.8, this.path);
     const humanIncoming = this.live && this.lastHitter !== this.human;
     const preview =
       humanIncoming && !this.human.swing

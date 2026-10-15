@@ -26,6 +26,22 @@ import type { Room } from '../net/room';
 import { OnlineHost } from '../net/onlineHost';
 import { OnlineGuest } from '../net/onlineGuest';
 import { TutorialMode } from './tutorialMode';
+import { ShowroomMode } from './showroomMode';
+import { RIVALS, rewardsFor } from './tournament';
+import { VENUES, VENUE_ORDER, VenueDresser, type VenueId } from '../render/venues';
+import {
+  CAP_COLORS,
+  HAIR_COLORS,
+  HAIR_STYLES,
+  HEADWEAR,
+  PADDLES,
+  SHIRTS,
+  SHORTS,
+  SKIN_TONES,
+  available,
+  lookToPalette,
+  type Look,
+} from '../players/look';
 import { TouchControls, isTouchDevice } from '../input/touch';
 import { loadSettings, saveSettings, type CameraPreset, type Settings } from './settings';
 
@@ -64,9 +80,16 @@ export class Game {
   private freeze = 0;
   /** What "Rematch" / "Restart" restarts. */
   private touch: TouchControls | null = null;
+  private venues: VenueDresser | null = null;
+  private venueId: VenueId | null = null;
   /** The online room while in an online match (or waiting for a friend). */
   private room: Room | null = null;
-  private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' | 'tutorial' | 'online' = {
+  private current:
+    | { near: Controller; far: Difficulty; doubles: boolean }
+    | { tournament: number }
+    | 'practice'
+    | 'tutorial'
+    | 'online' = {
     near: 'human',
     far: 'medium',
     doubles: false,
@@ -126,11 +149,16 @@ export class Game {
 
   async start(): Promise<void> {
     const lab = hasDebugFlag('lab');
-    const [, template] = await Promise.all([
+    const [court, template] = await Promise.all([
       loadCourt(this.stage.scene, this.stage.renderer.capabilities.getMaxAnisotropy()),
       lab ? null : loadPlayerTemplate(),
     ]);
     this.template = template;
+    this.venues = new VenueDresser(this.stage.scene, court, this.stage.hemi, this.stage.sun, this.stage.renderer);
+    // Debug: `?court=beach` picks the court for this session.
+    const court0 = debugFlag('court');
+    if (court0 && court0 in VENUES) this.settings.court = court0 as VenueId;
+    this.setVenue(this.settings.court);
     void this.findTitleArt();
 
     if (lab) {
@@ -152,6 +180,10 @@ export class Game {
       this.showJoin(debugFlag('join') ?? '');
       // Test hook: join without pressing the button.
       if (hasDebugFlag('autojoin')) void this.joinOnline(debugFlag('join') ?? '');
+    } else if (hasDebugFlag('myplayer')) {
+      this.showMyPlayer(() => this.showTitle());
+    } else if (hasDebugFlag('tournament')) {
+      this.showTournament();
     } else if (debugFlag('difficulty') || hasDebugFlag('doubles')) {
       this.startMatch('human', parseDifficulty(debugFlag('difficulty')), hasDebugFlag('doubles'));
     } else {
@@ -176,15 +208,27 @@ export class Game {
     this.world.ballView.clearTrail();
   }
 
-  private matchMode(near: Controller, far: Difficulty, doubles: boolean): MatchMode {
+  private setVenue(id: VenueId): void {
+    if (id === this.venueId) return;
+    this.venueId = id;
+    this.venues?.apply(VENUES[id]);
+  }
+
+  private matchMode(near: Controller, far: Difficulty, doubles: boolean, rival?: number): MatchMode {
+    const r = rival !== undefined ? RIVALS[rival] : null;
     const m = new MatchMode(this.world, this.template, this.scoreboard, {
       scoring: {
         ...DEFAULT_SCORING,
         mode: debugFlag('scoring') === 'rally' ? 'rally' : this.settings.scoring,
         teamSize: doubles ? 2 : 1,
+        target: r ? r.target : DEFAULT_SCORING.target,
       },
       near,
       far,
+      nearPalette: lookToPalette(this.settings.look),
+      farPalette: r?.palette,
+      farProfile: r?.profile,
+      names: r ? ['YOU', r.name.toUpperCase()] : undefined,
     });
     this.scoreboard.setNames(m.names);
     m.onGameOver = (r) => this.showResults(r);
@@ -193,19 +237,117 @@ export class Game {
 
   private startMatch(near: Controller, far: Difficulty, doubles = this.settings.format === 'doubles'): void {
     this.current = { near, far, doubles };
+    this.setVenue(this.settings.court);
     this.setMode(this.matchMode(near, far, doubles));
     this.enterPlaying();
   }
 
+  // ---------------------------------------------------------------- tournament
+
+  private showTournament(): void {
+    const s = this.settings;
+    const wins = Math.min(s.tourneyWins, RIVALS.length);
+    const champion = wins >= RIVALS.length;
+    const rows = RIVALS.map((r, i) => {
+      const cls = i < wins ? 'done' : i === wins ? 'next' : 'locked';
+      const mark = i < wins ? '✓' : i === wins ? '▶' : '🔒';
+      return `<div class="rival ${cls}"><span class="dot" style="background:${r.palette.shirt}"></span>
+        <div>${i + 1}. ${r.name}<small>${i <= wins ? r.style : '???'} · ${VENUES[r.venue].name}</small></div><span class="mark">${mark}</span></div>`;
+    }).join('');
+    const next = champion ? RIVALS.length - 1 : wins;
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-headline">${champion ? '🏆 Champion!' : 'Tournament'}</div>
+        <div class="menu-sub">${champion ? 'You beat them all. Replay the final any time.' : 'Beat six rivals to win the Pickle Crown. Every win unlocks gear for your player.'}</div>
+        <div class="rivals">${rows}</div>`,
+      items: [
+        { label: champion ? '▶ Replay the final' : `▶ Play ${RIVALS[next].name}`, primary: true, action: () => this.showRivalIntro(next) },
+        { label: 'My Player', action: () => this.showMyPlayer(() => this.showTournament()) },
+        { label: 'Back', action: () => this.showTitle() },
+      ],
+      back: () => this.showTitle(),
+    });
+  }
+
+  private showRivalIntro(i: number): void {
+    const r = RIVALS[i];
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-sub">Match ${i + 1} of ${RIVALS.length} · ${VENUES[r.venue].name}</div>
+        <div class="menu-headline">${r.name}</div>
+        <div class="menu-sub">${r.style}</div>
+        <div class="unlock">Tip: ${r.tip}</div>
+        <div class="menu-sub">First to ${r.target} · Win to unlock: ${r.reward.label}</div>`,
+      items: [
+        { label: '▶ Start match', primary: true, action: () => this.startTournamentMatch(i) },
+        { label: 'Back', action: () => this.showTournament() },
+      ],
+      back: () => this.showTournament(),
+    });
+  }
+
+  private startTournamentMatch(i: number): void {
+    this.current = { tournament: i };
+    this.setVenue(RIVALS[i].venue);
+    this.setMode(this.matchMode('human', 'medium', false, i));
+    this.enterPlaying();
+  }
+
+  // ---------------------------------------------------------------- my player
+
+  private showMyPlayer(back: () => void): void {
+    const s = this.settings;
+    this.state = 'title';
+    this.touch?.setVisible(false);
+    const room = new ShowroomMode(this.world, this.template, lookToPalette(s.look));
+    this.setVenue(s.court);
+    this.setMode(room);
+    this.scoreboard.setVisible(false);
+    this.world.hud.muted = true;
+    const pick = <T extends { name: string; unlock?: string }>(label: string, list: T[], key: keyof Look) => {
+      const idx = available(list, s.unlocked);
+      return this.option(
+        label,
+        idx.map((i) => list[i].name),
+        () => Math.max(0, idx.indexOf(s.look[key])),
+        (i) => {
+          s.look = { ...s.look, [key]: idx[i] };
+          room.setPalette(lookToPalette(s.look));
+        },
+      );
+    };
+    const locked = PADDLES.length + SHIRTS.length + HEADWEAR.length + CAP_COLORS.length -
+      [PADDLES, SHIRTS, HEADWEAR, CAP_COLORS].reduce((n, l) => n + available(l as { unlock?: string }[], s.unlocked).length, 0);
+    this.menu.show({
+      variant: 'side',
+      header: `<div class="menu-headline">My Player</div>
+        <div class="menu-sub">${locked ? `${locked} more items to unlock in the Tournament` : 'Everything unlocked!'}</div>`,
+      items: [
+        pick('Skin', SKIN_TONES, 'skin'),
+        pick('Hair', HAIR_STYLES, 'hairStyle'),
+        pick('Hair color', HAIR_COLORS, 'hair'),
+        pick('Shirt', SHIRTS, 'shirt'),
+        pick('Shorts', SHORTS, 'shorts'),
+        pick('Headwear', HEADWEAR, 'headwear'),
+        pick('Cap color', CAP_COLORS, 'cap'),
+        pick('Paddle', PADDLES, 'paddle'),
+        { label: 'Done', primary: true, action: back },
+      ],
+      back,
+    });
+  }
+
   private startPractice(): void {
     this.current = 'practice';
-    this.setMode(new PracticeMode(this.world, this.template));
+    this.setVenue(this.settings.court);
+    this.setMode(new PracticeMode(this.world, this.template, undefined, lookToPalette(this.settings.look)));
     this.enterPlaying();
   }
 
   private startTutorial(): void {
     this.current = 'tutorial';
-    const t = new TutorialMode(this.world, this.template, this.uiRoot, !!this.touch);
+    this.setVenue('park');
+    const t = new TutorialMode(this.world, this.template, this.uiRoot, !!this.touch, lookToPalette(this.settings.look));
     t.onComplete = () => this.tutorialFinished();
     this.setMode(t);
     this.enterPlaying();
@@ -315,7 +457,8 @@ export class Game {
     const host = new OnlineHost(this.world, this.template, this.scoreboard, channel, name, guestName, {
       ...DEFAULT_SCORING,
       mode: this.settings.scoring,
-    });
+    }, this.settings.court);
+    this.setVenue(this.settings.court);
     host.match.onGameOver = (r) => this.showResults(r);
     host.onGone = () => this.friendLeft();
     room.onGone = () => this.friendLeft();
@@ -367,6 +510,7 @@ export class Game {
       guest.onGameOver = (r) => this.showResults(r);
       guest.onNewGame = () => this.enterPlaying();
       guest.onGone = () => this.friendLeft();
+      guest.onVenue = (id) => id in VENUES && this.setVenue(id as VenueId);
       room.onGone = () => this.friendLeft();
       this.current = 'online';
       this.setMode(guest);
@@ -408,6 +552,7 @@ export class Game {
     }
     if (this.current === 'tutorial') this.startTutorial();
     else if (this.current === 'practice') this.startPractice();
+    else if ('tournament' in this.current) this.startTournamentMatch(this.current.tournament);
     else this.startMatch(this.current.near, this.current.far, this.current.doubles);
   }
 
@@ -425,6 +570,7 @@ export class Game {
   private showTitle(): void {
     this.state = 'title';
     this.touch?.setVisible(false);
+    this.setVenue(this.settings.court);
     this.setMode(this.matchMode('medium', 'hard', this.settings.format === 'doubles'));
     this.world.hud.muted = true;
     this.scoreboard.setVisible(false);
@@ -435,19 +581,36 @@ export class Game {
       variant: 'title',
       header: `<div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
-        { label: '▶ Play vs AI', primary: s.tutorialDone, action: () => this.startMatch('human', s.difficulty) },
+        { label: '▶ Play vs AI', primary: s.tutorialDone, action: () => this.showQuickPlay() },
+        { label: `🏆 Tournament${s.tourneyWins >= RIVALS.length ? ' ✓' : s.tourneyWins ? ` (${s.tourneyWins}/${RIVALS.length})` : ''}`, action: () => this.showTournament() },
+        { label: 'Play Online', action: () => this.showOnline() },
+        { label: 'My Player', action: () => this.showMyPlayer(() => this.showTitle()) },
         {
           label: s.tutorialDone ? 'How to Play' : '★ How to Play (new? start here)',
           primary: !s.tutorialDone,
           action: () => this.startTutorial(),
         },
-        this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
-        this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
-        { label: 'Play Online', action: () => this.showOnline() },
         { label: 'Watch AI vs AI', action: () => this.showWatchSetup() },
         { label: 'Practice', action: () => this.startPractice() },
         { label: 'Settings', action: () => this.showSettings(() => this.showTitle()) },
       ],
+    });
+  }
+
+  /** Play vs AI: pick singles/doubles, difficulty and court, then go. */
+  private showQuickPlay(): void {
+    const s = this.settings;
+    this.menu.show({
+      variant: 'title',
+      header: '<div class="menu-headline">Play vs AI</div>',
+      items: [
+        this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
+        this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
+        this.option('Court', VENUE_ORDER.map((v) => VENUES[v].name), () => VENUE_ORDER.indexOf(s.court), (i) => (s.court = VENUE_ORDER[i])),
+        { label: '▶ Start', primary: true, action: () => this.startMatch('human', s.difficulty) },
+        { label: 'Back', action: () => this.showTitle() },
+      ],
+      back: () => this.showTitle(),
     });
   }
 
@@ -520,6 +683,28 @@ export class Game {
     this.sound.setMusic(true);
     const youWon = r.humanTeam && r.winner === (r.youTeam ?? 0);
     const headline = youWon ? 'YOU WIN!' : r.humanTeam ? 'SO CLOSE!' : `${r.names[r.winner]} WINS`;
+    // Tournament: a win against the next rival advances you and unlocks gear.
+    let unlockLine = '';
+    let tourneyItems: MenuScreen['items'] | null = null;
+    const cur = this.current;
+    if (typeof cur === 'object' && 'tournament' in cur) {
+      const i = cur.tournament;
+      const s = this.settings;
+      if (youWon && i === s.tourneyWins) {
+        s.tourneyWins = i + 1;
+        for (const id of rewardsFor(i)) if (!s.unlocked.includes(id)) s.unlocked.push(id);
+        saveSettings(s);
+        unlockLine = `<div class="unlock">Unlocked: ${RIVALS[i].reward.label}! Try it on in My Player.</div>`;
+        if (s.tourneyWins >= RIVALS.length) unlockLine += '<div class="unlock">🏆 You are the Pickle Champion!</div>';
+      }
+      tourneyItems = [
+        youWon && i + 1 < RIVALS.length
+          ? { label: `▶ Next: ${RIVALS[i + 1].name}`, primary: true, action: () => this.showRivalIntro(i + 1) }
+          : { label: youWon ? '▶ Tournament' : '▶ Try again', primary: true, action: () => (youWon ? this.showTournament() : this.startTournamentMatch(i)) },
+        { label: 'My Player', action: () => this.showMyPlayer(() => this.showTournament()) },
+        { label: 'Tournament', action: () => this.showTournament() },
+      ];
+    }
     const stats = [
       ['Rallies won', `${r.ralliesWon[0]}–${r.ralliesWon[1]}`],
       ['Longest rally', `${r.longestRally} shots`],
@@ -531,8 +716,8 @@ export class Game {
       header: `<div class="menu-headline">${headline}</div>
         <div class="result-score">${r.points[0]} – ${r.points[1]}</div>
         <div class="menu-sub">${r.names[0]} vs ${r.names[1]}</div>
-        <div class="result-stats">${stats}</div>`,
-      items:
+        <div class="result-stats">${stats}</div>${unlockLine}`,
+      items: tourneyItems ?? (
         this.current === 'online'
           ? this.mode instanceof OnlineHost
             ? [
@@ -543,7 +728,7 @@ export class Game {
           : [
         { label: '▶ Rematch', primary: true, action: () => this.restart() },
         { label: 'Main menu', action: () => this.showTitle() },
-      ],
+      ]),
     };
     this.menu.show(screen);
   }
@@ -599,7 +784,7 @@ export class Game {
     this.lastFrameAt = now;
     this.advance(dt);
     // The title art covers the 3D scene, so don't spend the GPU drawing it.
-    const covered = this.state === 'title' && this.titleArt !== null && this.menu.open;
+    const covered = this.state === 'title' && this.titleArt !== null && this.menu.open && !this.mode?.cameraPose;
     if (!covered) this.stage.render(this.cam.camera);
     this.stage.adaptQuality(dt, now);
     this.world.keys.endFrame();
@@ -645,7 +830,9 @@ export class Game {
     this.effects.update(dt, this.cam.camera);
     this.crowd.update(this.time, gameDt);
 
-    if (hasDebugFlag('crowdcam')) {
+    if (mode.cameraPose?.(this.cam.camera, dt)) {
+      // the mode placed the camera
+    } else if (hasDebugFlag('crowdcam')) {
       // Test hook: close-up of the side bleachers, with the crowd cheering.
       this.crowd.cheer(debugFlag('crowdcam') === 'clap' ? 0.4 : 1);
       this.cam.camera.position.set(-10, 9, -6);

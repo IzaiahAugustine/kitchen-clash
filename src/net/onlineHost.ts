@@ -52,6 +52,7 @@ export class OnlineHost implements GameMode {
     hostName: string,
     guestName: string,
     scoring: ScoreConfig,
+    private venue = 'park',
   ) {
     this.match = new MatchMode(w, template, scoreboard, {
       scoring: { ...scoring, teamSize: 1 },
@@ -122,7 +123,7 @@ export class OnlineHost implements GameMode {
       case 'ready':
         console.info('[KC] host: guest is ready, starting the match');
         // The friend's game is listening: start the match for real.
-        this.channel.send({ t: 'hello', hostName: this.hostName, scoring: this.scoring }, true);
+        this.channel.send({ t: 'hello', hostName: this.hostName, scoring: this.scoring, venue: this.venue }, true);
         this.match.newGame();
         break;
       case 'ping':

@@ -19,9 +19,12 @@ const scratch = new Ball();
  * Runs the real ball physics forward (bounces and net included) so players and the AI can
  * see where the ball will be. Uses the same fixed step as the game, so it matches exactly.
  */
-export function predictPath(ball: Ball, horizon = 1.8): PathSample[] {
-  const out: PathSample[] = [];
-  if (!ball.inPlay) return out;
+export function predictPath(ball: Ball, horizon = 1.8, out: PathSample[] = []): PathSample[] {
+  let n = 0;
+  if (!ball.inPlay) {
+    out.length = 0;
+    return out;
+  }
   scratch.launch(ball.pos, ball.vel, ball.spin);
   scratch.rolling = ball.rolling;
   let bounces = 0;
@@ -34,7 +37,16 @@ export function predictPath(ball: Ball, horizon = 1.8): PathSample[] {
       if (e.type === 'bounce') bounces++;
       else if (e.type === 'net') netted = true;
     }
-    out.push({ t: i * dt, x: scratch.pos.x, y: scratch.pos.y, z: scratch.pos.z, bounces, netted });
+    // Reuse the sample objects from last time (pass the same array back in) to avoid garbage.
+    const s = out[n] ?? (out[n] = { t: 0, x: 0, y: 0, z: 0, bounces: 0, netted: false });
+    s.t = i * dt;
+    s.x = scratch.pos.x;
+    s.y = scratch.pos.y;
+    s.z = scratch.pos.z;
+    s.bounces = bounces;
+    s.netted = netted;
+    n++;
   }
+  out.length = n;
   return out;
 }

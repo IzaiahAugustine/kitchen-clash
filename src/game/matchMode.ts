@@ -1,6 +1,6 @@
 import { Vector3, type Object3D } from 'three';
 import { AiPlayer, type AiContext } from '../ai/aiPlayer';
-import { PROFILES, type Difficulty } from '../ai/difficulty';
+import { PROFILES, type AiProfile, type Difficulty } from '../ai/difficulty';
 import type { BallEvent } from '../physics/ball';
 import { PHYS } from '../physics/constants';
 import { predictPath, type PathSample } from '../physics/predict';
@@ -97,6 +97,11 @@ export interface MatchOptions {
   far: Controller;
   /** Override the scoreboard names (online: players' names). */
   names?: [string, string];
+  /** Your look (near player, when it's you). */
+  nearPalette?: Palette;
+  /** Tournament rival: their look and personality. */
+  farPalette?: Palette;
+  farProfile?: AiProfile;
 }
 
 export const DEFAULT_MATCH: MatchOptions = { scoring: DEFAULT_SCORING, near: 'human', far: 'medium' };
@@ -191,13 +196,21 @@ export class MatchMode implements GameMode {
         const level: Difficulty = c === 'human' || c === 'remote' ? 'medium' : c;
         const partnerLevel: Difficulty = opts.far === 'human' || opts.far === 'remote' ? 'medium' : opts.far;
         const person = (c === 'human' || c === 'remote') && index === 0;
-        const player = new Player(person ? 'You' : 'CPU', team === 0 ? 1 : -1, TEAM_PALETTES[team][index]);
+        const palette =
+          team === 0 && index === 0 && c === 'human' && opts.nearPalette
+            ? opts.nearPalette
+            : team === 1 && index === 0 && opts.farPalette
+              ? opts.farPalette
+              : TEAM_PALETTES[team][index];
+        const player = new Player(person ? 'You' : 'CPU', team === 0 ? 1 : -1, palette);
         return {
           team,
           index,
           player,
           human: person ? new HumanController(player) : null,
-          ai: person ? null : new AiPlayer(player, PROFILES[c === 'human' ? partnerLevel : level]),
+          ai: person
+            ? null
+            : new AiPlayer(player, team === 1 && index === 0 && opts.farProfile ? opts.farProfile : PROFILES[c === 'human' ? partnerLevel : level]),
           remote: c === 'remote' && index === 0 ? { pos: null, vel: { x: 0, z: 0 }, lag: 0, presses: [] } : null,
         };
       });
@@ -353,7 +366,7 @@ export class MatchMode implements GameMode {
 
   update(dt: number, time: number): void {
     const { ball } = this.w;
-    this.path = predictPath(ball);
+    this.path = predictPath(ball, 1.8, this.path);
 
     if (this.phase === 'gameOver') {
       this.phaseTimer -= dt;

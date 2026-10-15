@@ -1,4 +1,7 @@
-/** Colors for each material slot of the player model, plus what they wear on their head. */
+export type HairStyle = 'short' | 'ponytail' | 'shaved';
+export type Headwear = 'cap' | 'headband' | 'crown' | 'none';
+
+/** Colors for each material slot of the player model, plus hair style and headwear. */
 export interface Palette {
   skin: string;
   hair: string;
@@ -7,7 +10,8 @@ export interface Palette {
   /** Collar, sleeve hems and waistband. */
   trim: string;
   shorts: string;
-  headwear: 'cap' | 'headband' | 'none';
+  hairStyle: HairStyle;
+  headwear: Headwear;
   cap: string;
   headband: string;
   shoe: string;
@@ -26,6 +30,7 @@ export const PALETTES = {
     shirt: '#ff6b35',
     trim: '#ffffff',
     shorts: '#2b2d42',
+    hairStyle: 'short',
     headwear: 'cap',
     cap: '#ffd23f',
     headband: '#ffffff',
@@ -43,6 +48,7 @@ export const PALETTES = {
     shirt: '#7b2ff7',
     trim: '#00d1b2',
     shorts: '#1b1530',
+    hairStyle: 'short',
     headwear: 'headband',
     cap: '#00d1b2',
     headband: '#00d1b2',
@@ -60,6 +66,7 @@ export const PALETTES = {
     shirt: '#2ec4b6',
     trim: '#ffffff',
     shorts: '#2b2d42',
+    hairStyle: 'ponytail',
     headwear: 'cap',
     cap: '#ff6b35',
     headband: '#ffffff',
@@ -77,7 +84,8 @@ export const PALETTES = {
     shirt: '#e63946',
     trim: '#1b1530',
     shorts: '#1b1530',
-    headwear: 'cap',
+    hairStyle: 'ponytail',
+    headwear: 'none',
     cap: '#1b1530',
     headband: '#e63946',
     shoe: '#f5f5f5',

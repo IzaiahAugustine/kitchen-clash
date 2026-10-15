@@ -43,6 +43,7 @@ export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly sun: THREE.DirectionalLight;
+  readonly hemi = new THREE.HemisphereLight(0xdcefff, 0x5f8f4a, 0.9);
   private composer: EffectComposer | null = null;
   private ao: GTAOPass | null = null;
   private camera: THREE.Camera | null = null;
@@ -75,7 +76,7 @@ export class Stage {
     this.scene.environmentIntensity = 0.45;
     pmrem.dispose();
 
-    this.scene.add(new THREE.HemisphereLight(0xdcefff, 0x5f8f4a, 0.9));
+    this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
     this.sun.position.set(-30, 70, 30);
     this.sun.castShadow = true;
@@ -140,7 +141,8 @@ export class Stage {
     }
     if (now - this.lastAdjust < 2000 || this.frameTimes.length < 60) return;
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
-    const typical = sorted[Math.floor(sorted.length * 0.5)];
+    // Judge by the slower frames (80th percentile), so regular hitches count, not just the average.
+    const typical = sorted[Math.floor(sorted.length * 0.8)];
     let next = this.level;
     if (typical > 1 / 48 && this.level < this.ladder.length - 1) {
       next = this.level + 1;

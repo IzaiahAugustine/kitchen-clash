@@ -35,6 +35,8 @@ COLORS = {
     "shorts": "#2b2d42",
     "cap": "#ffd23f",
     "headband": "#ffffff",
+    "hair_tail": "#3b2414",
+    "crown": "#ffc83d",
     "shoe": "#f5f5f5",
     "sole": "#ffffff",
     "sock": "#ffffff",
@@ -237,32 +239,44 @@ loft("ol_waistband", hips, [
 
 # ---------------------------------------------------------------- head
 
-loft("ol_neck", neck, [(-0.12, 0.16, 0.15, 0, 0.02), (0.3, 0.15, 0.14, 0, 0.03)], "skin", segments=12)
-ell("ol_head", neck, (0, 0.6, 0), (0.39, 0.47, 0.43), "skin", segs=24, rings=16)
-ell("ol_nose", neck, (0, 0.56, -0.44), (0.05, 0.08, 0.06), "skin", segs=12, rings=8)
+# Head ~1/7 of body height (realistic proportions), slightly taller than wide.
+loft("ol_neck", neck, [(-0.12, 0.155, 0.145, 0, 0.02), (0.3, 0.145, 0.135, 0, 0.03)], "skin", segments=12)
+ell("ol_head", neck, (0, 0.58, 0), (0.36, 0.44, 0.4), "skin", segs=24, rings=16)
+ell("ol_nose", neck, (0, 0.54, -0.4), (0.045, 0.075, 0.055), "skin", segs=12, rings=8)
 for sx, tag in ((1, "R"), (-1, "L")):
-    ell(f"ol_ear_{tag}", neck, (sx * 0.39, 0.58, 0.03), (0.05, 0.11, 0.08), "skin", segs=12, rings=8)
-    ell(f"flat_eye_{tag}", neck, (sx * 0.15, 0.66, -0.385), (0.085, 0.065, 0.04), "eye_white", segs=14, rings=8)
-    ell(f"flat_iris_{tag}", neck, (sx * 0.15, 0.66, -0.418), (0.048, 0.05, 0.02), "iris", segs=12, rings=8)
-    ell(f"flat_pupil_{tag}", neck, (sx * 0.15, 0.66, -0.433), (0.024, 0.026, 0.012), "pupil", segs=10, rings=6)
-    rounded_box(f"flat_brow_{tag}", neck, (sx * 0.16, 0.765, -0.39), (0.13, 0.03, 0.04), "hair", 0.012,
+    ell(f"ol_ear_{tag}", neck, (sx * 0.36, 0.56, 0.03), (0.045, 0.1, 0.075), "skin", segs=12, rings=8)
+    ell(f"flat_eye_{tag}", neck, (sx * 0.135, 0.63, -0.352), (0.068, 0.05, 0.034), "eye_white", segs=14, rings=8)
+    ell(f"flat_iris_{tag}", neck, (sx * 0.135, 0.63, -0.38), (0.04, 0.042, 0.016), "iris", segs=12, rings=8)
+    ell(f"flat_pupil_{tag}", neck, (sx * 0.135, 0.63, -0.392), (0.019, 0.021, 0.01), "pupil", segs=10, rings=6)
+    rounded_box(f"flat_brow_{tag}", neck, (sx * 0.145, 0.715, -0.345), (0.11, 0.026, 0.035), "hair", 0.01,
                 rotation=(0, sx * 0.12, 0))
-ell("flat_mouth", neck, (0, 0.43, -0.405), (0.085, 0.018, 0.025), "lips", segs=12, rings=6)
+ell("flat_mouth", neck, (0, 0.42, -0.36), (0.07, 0.015, 0.022), "lips", segs=12, rings=6)
 
-# Hair: a cap of hair over the top/back of the head with sideburns
-ell("ol_hair", neck, (0, 0.7, 0.05), (0.415, 0.36, 0.45), "hair", segs=24, rings=14)
+# Hair styles (the game shows the one a player picked): short hair over the top/back with
+# sideburns; a ponytail adds a tail on top of that; "shaved" hides both.
+ell("ol_hair", neck, (0, 0.67, 0.04), (0.38, 0.34, 0.42), "hair", segs=24, rings=14)
 for sx, tag in ((1, "R"), (-1, "L")):
-    ell(f"ol_sideburn_{tag}", neck, (sx * 0.36, 0.6, -0.05), (0.06, 0.12, 0.09), "hair", segs=10, rings=6)
+    ell(f"ol_sideburn_{tag}", neck, (sx * 0.33, 0.57, -0.04), (0.055, 0.11, 0.085), "hair", segs=10, rings=6)
+ell("ol_ponytail", neck, (0, 0.5, 0.46), (0.11, 0.3, 0.12), "hair_tail", rotation=(-0.35, 0, 0))
+ell("ol_hairtie", neck, (0, 0.72, 0.43), (0.07, 0.05, 0.06), "hair_tail", segs=10, rings=6)
 
 # Headwear variants (the game shows one per player)
-ell("ol_cap", neck, (0, 0.82, 0.0), (0.43, 0.27, 0.46), "cap", segs=24, rings=14)
-rounded_box("ol_cap_brim", neck, (0, 0.8, -0.5), (0.5, 0.035, 0.36), "cap", 0.015, rotation=(-0.12, 0, 0))
-torus("ol_headband", neck, (0, 0.78, 0.01), 0.405, 0.045, "headband", scale=(1.0, 1, 1.08))
+ell("ol_cap", neck, (0, 0.79, 0.0), (0.395, 0.25, 0.425), "cap", segs=24, rings=14)
+rounded_box("ol_cap_brim", neck, (0, 0.77, -0.46), (0.46, 0.035, 0.34), "cap", 0.015, rotation=(-0.12, 0, 0))
+torus("ol_headband", neck, (0, 0.74, 0.01), 0.37, 0.042, "headband", scale=(1.0, 1, 1.08))
+# Tournament champion's crown
+cyl("ol_crown", neck, (0, 0.93, 0.02), 0.27, 0.16, "crown", verts=16)
+for i in range(6):
+    a = i / 6 * 6.2832
+    bpy.ops.mesh.primitive_cone_add(vertices=6, radius1=0.07, radius2=0.0, depth=0.16, location=(0, 0, 0))
+    ob = bpy.context.active_object
+    ob.name = ob.data.name = f"ol_crown_point_{i}"
+    _attach(ob, neck, (0.24 * math.cos(a), 1.08, 0.02 + 0.24 * math.sin(a)), "crown")
 
 # ---------------------------------------------------------------- arms
 
 for tag, sh, el, hand in (("R", sh_r, el_r, hand_r), ("L", sh_l, el_l, hand_l)):
-    ell(f"ol_shoulder_{tag}", sh, (-0.04 if tag == "R" else 0.04, -0.08, 0), (0.18, 0.15, 0.19), "shirt")
+    ell(f"ol_shoulder_{tag}", sh, (-0.07 if tag == "R" else 0.07, -0.1, 0), (0.16, 0.13, 0.17), "shirt")
     loft(f"ol_sleeve_{tag}", sh, [
         (0.0, 0.2, 0.2, 0, 0),
         (-0.42, 0.19, 0.19, 0, 0),

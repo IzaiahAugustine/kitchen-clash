@@ -48,6 +48,10 @@ export class Crowd {
   private s = new THREE.Vector3(1, 1, 1);
   private up = new THREE.Vector3(0, 1, 0);
   private hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+  // Scratch objects so the per-frame animation allocates nothing.
+  private shoulder = new THREE.Vector3();
+  private fanPos = new THREE.Vector3();
+  private euler = new THREE.Euler(0, 0, 0, 'YXZ');
   /** 0..1 cheer level; decays. */
   excitement = 0;
   /** Light applause level (after any point); decays. */
@@ -71,7 +75,8 @@ export class Crowd {
     const mat = () => new THREE.MeshStandardMaterial({ roughness: 0.85 });
     const mk = (geo: THREE.BufferGeometry) => {
       const mesh = new THREE.InstancedMesh(geo, mat(), n);
-      mesh.castShadow = true;
+      // Receive shadows only: 300 fans casting shadows doubles their cost for little gain.
+      mesh.castShadow = false;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       scene.add(mesh);
@@ -170,9 +175,9 @@ export class Crowd {
    * ~2.7 = straight up) and in toward the body by `inward` for clapping.
    */
   private setArm(mesh: THREE.InstancedMesh, i: number, f: Fan, y: number, yaw: number, side: number, lift: number, inward: number): void {
-    const shoulder = this.v.set(side * 0.36, 0.92, 0).applyAxisAngle(this.up, yaw).add(new THREE.Vector3(f.x, y, f.z));
-    const rot = new THREE.Euler(lift, yaw, side * (0.15 + (lift > 2 ? 0.25 : 0)) - side * (lift > 1 && lift < 2 ? inward : 0), 'YXZ');
-    this.arm.compose(shoulder, this.q.setFromEuler(rot), this.s);
+    const shoulder = this.shoulder.set(side * 0.36, 0.92, 0).applyAxisAngle(this.up, yaw).add(this.fanPos.set(f.x, y, f.z));
+    this.euler.set(lift, yaw, side * (0.15 + (lift > 2 ? 0.25 : 0)) - side * (lift > 1 && lift < 2 ? inward : 0), 'YXZ');
+    this.arm.compose(shoulder, this.q.setFromEuler(this.euler), this.s);
     mesh.setMatrixAt(i, this.arm);
   }
 }

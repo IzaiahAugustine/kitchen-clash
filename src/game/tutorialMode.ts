@@ -13,7 +13,7 @@ import {
   stretchTiming,
 } from '../players/hitting';
 import { HumanController } from '../players/humanController';
-import { PALETTES } from '../players/palette';
+import { PALETTES, type Palette } from '../players/palette';
 import { LUNGE_REACH, Player } from '../players/player';
 import { PlayerView } from '../players/playerView';
 import type { ShotKind, ShotPlan } from '../players/shots';
@@ -137,11 +137,12 @@ export class TutorialMode implements GameMode {
     template: Object3D | null,
     uiRoot: HTMLElement,
     touch: boolean,
+    palette?: Palette,
   ) {
     this.keys = touch
       ? { move: 'Drag the left side of the screen', hit: 'HIT', soft: 'SOFT', power: 'POWER' }
       : { move: 'Use WASD (or the arrow keys)', hit: 'J', soft: 'K', power: 'L' };
-    this.you = new Player('You', 1, PALETTES.hero);
+    this.you = new Player('You', 1, palette ?? PALETTES.hero);
     this.coach = new Player('Coach', -1, PALETTES.rival);
     this.ctl = new HumanController(this.you);
     this.views = template
@@ -249,7 +250,7 @@ export class TutorialMode implements GameMode {
 
   update(dt: number, time: number): void {
     const { ball } = this.w;
-    this.path = predictPath(ball);
+    this.path = predictPath(ball, 1.8, this.path);
     const id = this.current.id;
     const input = this.w.controls.frame;
     if (this.w.keys.wasPressed?.('KeyN')) this.nextStep();

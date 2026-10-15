@@ -1,4 +1,6 @@
 import type { Difficulty } from '../ai/difficulty';
+import { DEFAULT_LOOK, type Look } from '../players/look';
+import type { VenueId } from '../render/venues';
 import type { ScoringMode } from '../rules/scoring';
 
 export type CameraPreset = 'close' | 'classic' | 'wide';
@@ -21,6 +23,14 @@ export interface Settings {
   tutorialDone: boolean;
   /** Your name in online matches. */
   name: string;
+  /** Your player's look (My Player). */
+  look: Look;
+  /** Gear earned in the tournament. */
+  unlocked: string[];
+  /** Tournament rivals beaten so far (0..6). */
+  tourneyWins: number;
+  /** Court for Play vs AI. */
+  court: VenueId;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -35,6 +45,10 @@ export const DEFAULT_SETTINGS: Settings = {
   graphics: 'standard',
   tutorialDone: false,
   name: '',
+  look: DEFAULT_LOOK,
+  unlocked: [],
+  tourneyWins: 0,
+  court: 'park',
 };
 
 const KEY = 'kitchen-clash-settings';

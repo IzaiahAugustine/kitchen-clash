@@ -23,6 +23,10 @@ export interface AiProfile {
   serveRisk: number;
   /** How far (ft) it's willing to lunge for a ball when planning (the most anyone can is 2.2). */
   reach: number;
+  /** Style (tournament rivals): chance to lob from the kitchen, speed up a high dink, drop vs drive. */
+  lobRate?: number;
+  attack?: number;
+  dropRate?: number;
 }
 
 export const PROFILES: Record<Difficulty, AiProfile> = {

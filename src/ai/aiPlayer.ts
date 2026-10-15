@@ -171,7 +171,7 @@ export class AiPlayer {
       button = smart ? (Math.random() < 0.8 ? 'soft' : 'drive') : Math.random() < 0.5 ? 'soft' : 'drive';
     } else if (atKitchen) {
       if (c.pos.y >= 3.4) button = 'drive'; // put away the high ball
-      else if (smart && !c.bounced && c.pos.y >= 2.6 && Math.random() < 0.45) {
+      else if (smart && !c.bounced && c.pos.y >= 2.6 && Math.random() < (this.profile.attack ?? 0.45)) {
         // A dink that sat up a little: speed it up with a hard volley at the opponent.
         kind = 'speedup';
         depth = rand(-0.6, 0.2);
@@ -179,7 +179,7 @@ export class AiPlayer {
         // Opponent stuck back: punch the volley deep instead of dinking.
         kind = 'drive';
         depth = rand(0.3, 0.8);
-      } else if (oppUp && oppFromNet < COURT.kitchenDepth + 1.4 && smart && Math.random() < 0.12) {
+      } else if (oppUp && oppFromNet < COURT.kitchenDepth + 1.4 && smart && Math.random() < (this.profile.lobRate ?? 0.12)) {
         button = 'soft'; // lob a player crowding the net
       } else if (!smart && Math.random() < 0.12) {
         button = 'soft'; // a poorly chosen lob
@@ -188,7 +188,7 @@ export class AiPlayer {
       }
     } else if (oppUp) {
       // From the back or midcourt against a net player: drop / reset soft into the kitchen.
-      button = smart ? (Math.random() < 0.85 ? 'soft' : 'drive') : Math.random() < 0.5 ? 'soft' : 'drive';
+      button = smart ? (Math.random() < (this.profile.dropRate ?? 0.85) ? 'soft' : 'drive') : Math.random() < 0.5 ? 'soft' : 'drive';
     } else {
       // Both back: drive deep, sometimes drop to start coming in.
       button = smart ? (Math.random() < 0.75 ? 'drive' : 'soft') : Math.random() < 0.5 ? 'drive' : 'soft';
