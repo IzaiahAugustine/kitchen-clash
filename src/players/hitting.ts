@@ -224,7 +224,12 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
   const kind = swing.kind as ShotKind;
   const timing = swing.timing ?? { grade: 'good', error: 0 };
   const from = ball.pos.clone();
-  const plan = swing.plan ?? planShot(kind, from, player.side, swing.hand, aim, timing, swing.button === 'power');
+  const plan =
+    swing.plan ??
+    planShot(kind, from, player.side, swing.hand, aim, timing, swing.button === 'power', {
+      incomingSpeed: ball.vel.length(),
+      hitterSpeed: Math.hypot(player.vel.x, player.vel.z),
+    });
   const sol = solveShot({
     from,
     target: plan.target,

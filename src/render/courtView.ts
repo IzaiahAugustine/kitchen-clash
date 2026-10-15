@@ -27,7 +27,7 @@ const TILE_FEET: Record<string, number> = { flat_ground: 14, flat_court: 6, flat
  * Loads the Blender-built court (public/models/court.glb) and dresses it: textured court and
  * grass, printed windscreens, metal posts and bleachers (see tools/blender/build_court.py).
  */
-export async function loadCourt(scene: THREE.Scene): Promise<THREE.Object3D> {
+export async function loadCourt(scene: THREE.Scene, maxAnisotropy = 8): Promise<THREE.Object3D> {
   const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/court.glb`);
   const root = gltf.scene;
 
@@ -51,6 +51,8 @@ export async function loadCourt(scene: THREE.Scene): Promise<THREE.Object3D> {
     if (name.startsWith('ol_windscreen')) wallUVs(mesh.geometry, 17, 4);
 
     const params = SURFACES.find(([p]) => name.startsWith(p))?.[1]() ?? {};
+    // The court is seen at a low angle: full anisotropic filtering keeps its texture crisp.
+    if (params.map) params.map.anisotropy = maxAnisotropy;
     // Printed textures carry their own color.
     if (name.startsWith('ol_windscreen')) color.set(0xffffff);
     mesh.material = surfaceMaterial(color, {

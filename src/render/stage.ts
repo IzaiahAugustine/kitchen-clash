@@ -11,7 +11,7 @@ import { isTouchDevice } from '../input/touch';
  * Highest render resolution multiplier. Phones have small, very dense screens (3x), so they
  * need more than laptops (2x Retina) to look sharp.
  */
-const MAX_PIXEL_RATIO = isTouchDevice() ? 3 : 1.5;
+const MAX_PIXEL_RATIO = isTouchDevice() ? 3 : 2;
 /** Never render below the screen's own resolution: that's what makes things blurry. */
 const MIN_PIXEL_RATIO = 1;
 

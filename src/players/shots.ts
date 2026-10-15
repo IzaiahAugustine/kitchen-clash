@@ -113,6 +113,8 @@ export function planShot(
   timing: Timing,
   /** Hit with the Power button: faster, but mistimed power shots go badly wrong. */
   powered = false,
+  /** How fast the ball was coming (ft/s) and how fast the hitter was moving (ft/s). */
+  situation: { incomingSpeed?: number; hitterSpeed?: number } = {},
 ): ShotPlan {
   const spec = SPECS[kind];
   // The hitter's right is +x on the near side and -x on the far side.
@@ -160,6 +162,18 @@ export function planShot(
       clearance = spec.clearance * 0.3;
     }
     scatter = 1.5;
+  }
+
+  // Real-life control: a blistering ball is hard to swing at (blocking it softly is fine),
+  // and hitting on the run is less accurate than being set.
+  const pressure = Math.min(1, Math.max(0, ((situation.incomingSpeed ?? 0) - 45) / 30));
+  const onTheRun = Math.min(1, Math.max(0, ((situation.hitterSpeed ?? 0) - 5) / 8));
+  const hardSwing = power || kind === 'lob';
+  scatter += pressure * (hardSwing ? 1.6 : 0.4) + onTheRun * 1.1;
+  if (pressure > 0.5 && hardSwing && timing.grade !== 'perfect' && Math.random() < 0.3 * pressure) {
+    // Rushed: the swing is late on the pace and the ball flies long or wide.
+    lateral += (Math.random() < 0.5 ? -1 : 1) * rand(2, 4);
+    depth += rand(1, 4);
   }
 
   if (low > 0) {

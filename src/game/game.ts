@@ -126,7 +126,10 @@ export class Game {
 
   async start(): Promise<void> {
     const lab = hasDebugFlag('lab');
-    const [, template] = await Promise.all([loadCourt(this.stage.scene), lab ? null : loadPlayerTemplate()]);
+    const [, template] = await Promise.all([
+      loadCourt(this.stage.scene, this.stage.renderer.capabilities.getMaxAnisotropy()),
+      lab ? null : loadPlayerTemplate(),
+    ]);
     this.template = template;
     void this.findTitleArt();
 
@@ -642,7 +645,12 @@ export class Game {
     this.effects.update(dt, this.cam.camera);
     this.crowd.update(this.time, gameDt);
 
-    if (this.orbit) this.orbit.update();
+    if (hasDebugFlag('crowdcam')) {
+      // Test hook: close-up of the side bleachers, with the crowd cheering.
+      this.crowd.cheer(debugFlag('crowdcam') === 'clap' ? 0.4 : 1);
+      this.cam.camera.position.set(-10, 9, -6);
+      this.cam.camera.lookAt(-23, 3.5, -12);
+    } else if (this.orbit) this.orbit.update();
     else if (this.state === 'title') this.cam.orbit(dt);
     else this.cam.update(dt, mode.cameraTargetX(), mode.cameraSide?.() ?? 1);
 
