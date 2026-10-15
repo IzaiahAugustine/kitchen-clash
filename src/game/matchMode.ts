@@ -398,7 +398,7 @@ export class MatchMode implements GameMode {
     }
 
     for (const s of this.seats) {
-      if (s.remote) this.updateRemote(s, s.remote, time);
+      if (s.remote) this.updateRemote(s, s.remote, time, dt);
       else if (s.human) this.updateHuman(s, s.human, time);
       else if (s.ai) this.updateAi(s, s.ai, time, dt);
     }
@@ -520,13 +520,21 @@ export class MatchMode implements GameMode {
    * A friend playing online: their own screen moves them (we take its reported position), and
    * their presses arrive here. Timing is graded by when they pressed on THEIR screen.
    */
-  private updateRemote(s: Seat, r: RemoteInput, time: number): void {
+  private updateRemote(s: Seat, r: RemoteInput, time: number, dt: number): void {
     const p = s.player;
     if (r.pos) {
       // Lag compensation: they've kept moving since they sent this, so project it forward.
       const ahead = Math.min(r.lag, 0.25);
-      p.pos.x = Math.max(-15.5, Math.min(15.5, r.pos.x + r.vel.x * ahead));
-      p.pos.z = p.side * Math.max(0.8, Math.min(30, p.side * (r.pos.z + r.vel.z * ahead)));
+      const tx = Math.max(-15.5, Math.min(15.5, r.pos.x + r.vel.x * ahead));
+      const tz = p.side * Math.max(0.8, Math.min(30, p.side * (r.pos.z + r.vel.z * ahead)));
+      // Their updates arrive in uneven bursts: keep moving with their velocity and ease toward
+      // the reported spot, so they glide instead of teleporting a step at a time.
+      p.pos.x += r.vel.x * dt;
+      p.pos.z += r.vel.z * dt;
+      const k = 1 - Math.exp(-dt * 14);
+      const far = Math.hypot(tx - p.pos.x, tz - p.pos.z) > 6;
+      p.pos.x = far ? tx : p.pos.x + (tx - p.pos.x) * k;
+      p.pos.z = far ? tz : p.pos.z + (tz - p.pos.z) * k;
       p.vel.set(r.vel.x, 0, r.vel.z);
     }
     if (p.swing && time > p.swing.endAt + 0.3) p.swing = null;
@@ -695,6 +703,7 @@ export class MatchMode implements GameMode {
       this.pendingFault = null;
       this.referee.live = true;
     }
+    const drawnAt = ball.pos.clone();
     ball.launch(rw.pos, rw.vel, rw.spin);
     ball.rolling = rw.rolling;
     ball.drainEvents();
@@ -718,6 +727,8 @@ export class MatchMode implements GameMode {
       ball.step(PHYS.fixedDt);
       for (const e of ball.drainEvents()) this.onBallEvent(e);
     }
+    // Glide the drawn ball onto its replayed path instead of teleporting it.
+    this.w.ballView.smoothJump?.(drawnAt, ball.pos);
   }
 
   /** Partners don't run through each other. */

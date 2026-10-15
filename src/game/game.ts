@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { netStats } from '../net/stats';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { parseDifficulty, type Difficulty } from '../ai/difficulty';
 import { Sound } from '../audio/sound';
@@ -124,7 +125,10 @@ export class Game {
         setLanding: (p) => this.effects.setLanding(p),
         setServeBox: (b) => this.effects.setServeBox(b),
         shake: (a) => this.cam.shake(a),
-        hitstop: (s) => (this.freeze = Math.max(this.freeze, s)),
+        // Never online: freezing one player's clock pulls the two games out of step.
+        hitstop: (s) => {
+          if (!this.mode?.online) this.freeze = Math.max(this.freeze, s);
+        },
       },
     };
     this.scoreboard = new Scoreboard(this.uiRoot, ['YOU', 'CPU'], ['#ff6b35', '#7b2ff7']);
@@ -804,6 +808,7 @@ export class Game {
 
   private frame(): void {
     const now = performance.now();
+    netStats.frames++;
     // Online, a hitch on one computer must not slow the shared match down, so catch up more.
     const dt = Math.min((now - this.lastFrameAt) / 1000, this.mode?.online ? 0.25 : 0.1);
     this.lastFrameAt = now;
@@ -835,6 +840,7 @@ export class Game {
       const now = performance.now();
       const dt = Math.min((now - this.lastFrameAt) / 1000, 0.25);
       this.lastFrameAt = now;
+      netStats.bgTicks++;
       this.advance(dt);
       this.world.keys.endFrame();
     };

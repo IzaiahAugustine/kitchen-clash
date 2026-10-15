@@ -77,10 +77,25 @@ export class BallView {
     this.squashAmt = Math.min(0.35, impactSpeed / 80);
   }
 
+  /**
+   * Online corrections move the real ball instantly; the drawn ball glides over from where it
+   * was instead of teleporting (the gap shrinks to nothing in about a quarter second).
+   */
+  smoothJump(from: THREE.Vector3, to: THREE.Vector3): void {
+    this.drawOffset.add(from).sub(to);
+    // A huge jump (a new point, a big disagreement) is better shown as-is.
+    if (this.drawOffset.length() > 14) this.drawOffset.set(0, 0, 0);
+  }
+
+  private drawOffset = new THREE.Vector3();
+
   update(ball: Ball, dt: number, camera?: THREE.Camera): void {
+    if (!ball.inPlay) this.drawOffset.set(0, 0, 0);
+    else this.drawOffset.multiplyScalar(Math.exp(-dt * 12));
+    const o = this.drawOffset;
     // Lift the drawn ball so the enlarged sphere still sits on the court when it bounces.
     const lift = PHYS.ballRadius * (VISUAL_SCALE - 1);
-    this.mesh.position.set(ball.pos.x, ball.pos.y + lift, ball.pos.z);
+    this.mesh.position.set(ball.pos.x + o.x, Math.max(PHYS.ballRadius, ball.pos.y + o.y) + lift, ball.pos.z + o.z);
 
     this.squashT = Math.min(1, this.squashT + dt / 0.12);
     const sq = this.squashAmt * Math.sin(this.squashT * Math.PI);
@@ -92,9 +107,9 @@ export class BallView {
       this.mesh.rotateOnWorldAxis(this.spinAxis, w * dt);
     }
 
-    const h = Math.max(0, ball.pos.y - PHYS.ballRadius);
+    const h = Math.max(0, ball.pos.y + o.y - PHYS.ballRadius);
     const s = 1 / (1 + h * 0.09);
-    this.shadow.position.set(ball.pos.x, 0.045, ball.pos.z);
+    this.shadow.position.set(ball.pos.x + o.x, 0.045, ball.pos.z + o.z);
     this.shadow.scale.setScalar(0.6 + 0.4 * s);
     (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.45 * s;
 

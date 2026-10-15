@@ -8,6 +8,7 @@ import { Vector3 } from 'three';
 import type { ScoreConfig } from '../rules/scoring';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
+import { netStats } from './stats';
 
 /** Snapshots per second: direct connections can take a lot; Firebase relay less. */
 const SNAP_RATE = { p2p: 30, relay: 20, loopback: 30 };
@@ -119,6 +120,7 @@ export class OnlineHost implements GameMode {
   }
 
   private receive(m: Record<string, unknown>): void {
+    netStats.hostMsgs++;
     const remote = this.match.remoteInput;
     switch (m.t) {
       case 'in':

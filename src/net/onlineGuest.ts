@@ -19,6 +19,7 @@ import { clampServer, type ServeSetup } from '../rules/serve';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
 import { encodePlan, type SwingDesc } from './onlineHost';
+import { netStats } from './stats';
 
 /** How often we send our position (per second). */
 const INPUT_RATE = { p2p: 30, relay: 20, loopback: 30 };
@@ -116,6 +117,7 @@ export class OnlineGuest implements GameMode {
 
   private gotHello = false;
   private lastSnapAt = -Infinity;
+  private drawnFrom = new Vector3();
   /** Flight number of our own predicted hit, and until when to trust it over older snapshots. */
   private predictedFlight = -1;
   private predictUntil = 0;
@@ -252,12 +254,14 @@ export class OnlineGuest implements GameMode {
     // the ball backward, so only use the newest.
     if ((m.h as number) <= this.lastSnapAt) return;
     this.lastSnapAt = m.h as number;
+    netStats.snaps++;
     // We just hit the ball ourselves: snapshots from before the host saw that hit would pull
     // the ball back onto its old path. Use them for the host's position only.
     if ((m.f as number) < this.predictedFlight && this.now < this.predictUntil) {
       const hp = m.hp as number[];
       this.samples.push({ h: m.h as number, x: hp[0], z: hp[1], vx: hp[2], vz: hp[3] });
       if (this.samples.length > 20) this.samples.shift();
+      netStats.heldForPrediction++;
       return;
     }
     this.phase = m.ph as string;
@@ -265,6 +269,7 @@ export class OnlineGuest implements GameMode {
     this.bounces = m.bc as number;
     this.mustLetBounce = m.mlb === 1;
     const age = this.haveOffset ? Math.max(0, Math.min(0.5, this.now + this.offset - (m.h as number))) : this.rtt / 2;
+    netStats.ageSum += age;
     const b = m.b as number[];
     const ball = this.w.ball;
     const s = this.scratch;
@@ -275,10 +280,14 @@ export class OnlineGuest implements GameMode {
       s.drainEvents();
       const newShot = (m.f as number) !== ball.flight || !ball.inPlay;
       const err = s.pos.distanceTo(ball.pos);
+      const was = this.drawnFrom.copy(ball.pos);
+      const wasInPlay = ball.inPlay;
+      if (!newShot && err > 1.2) netStats.snapJumps++;
       if (newShot || err > 1.2) {
         ball.launch(s.pos, s.vel, s.spin);
         ball.rolling = s.rolling;
         ball.flight = m.f as number;
+        if (wasInPlay) this.w.ballView.smoothJump?.(was, ball.pos);
       } else {
         ball.pos.lerp(s.pos, 0.35);
         ball.vel.lerp(s.vel, 0.35);
