@@ -22,7 +22,7 @@ import { clampServer, planServe, serveSetup, type ServeSetup } from '../rules/se
 import { COURT, inKitchen, isInCourt } from './court';
 import type { GameMode, World } from './mode';
 
-type StepId = 'move' | 'drive' | 'perfect' | 'soft' | 'dink' | 'serve' | 'rules';
+type StepId = 'move' | 'drive' | 'perfect' | 'soft' | 'power' | 'dink' | 'serve' | 'rules';
 
 interface Step {
   id: StepId;
@@ -37,6 +37,7 @@ interface Keys {
   move: string;
   hit: string;
   soft: string;
+  power: string;
 }
 
 const STEPS: Step[] = [
@@ -66,6 +67,13 @@ const STEPS: Step[] = [
     text: (k) =>
       `<b>${k.soft}</b> hits soft. From the back of the court it's a drop shot that falls into the kitchen. Land 2.`,
     goal: 2,
+  },
+  {
+    id: 'power',
+    title: 'Power',
+    text: (k) =>
+      `<b>${k.power}</b> hits as hard as you can: a blistering drive from the back, a speed-up at the net, a big smash on high balls. It's risky: mistime it and it sprays. Land 1 power shot.`,
+    goal: 1,
   },
   {
     id: 'dink',
@@ -131,8 +139,8 @@ export class TutorialMode implements GameMode {
     touch: boolean,
   ) {
     this.keys = touch
-      ? { move: 'Drag the left side of the screen', hit: 'HIT', soft: 'SOFT' }
-      : { move: 'Use WASD (or the arrow keys)', hit: 'J', soft: 'K' };
+      ? { move: 'Drag the left side of the screen', hit: 'HIT', soft: 'SOFT', power: 'POWER' }
+      : { move: 'Use WASD (or the arrow keys)', hit: 'J', soft: 'K', power: 'L' };
     this.you = new Player('You', 1, PALETTES.hero);
     this.coach = new Player('Coach', -1, PALETTES.rival);
     this.ctl = new HumanController(this.you);
@@ -315,6 +323,7 @@ export class TutorialMode implements GameMode {
       you.swing = swing;
       if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(you));
       if (button === 'drive' && this.current.id === 'soft') this.w.hud.tag(`Use ${this.keys.soft} for soft shots`, 'info', overHead(you), 1400);
+      if (button !== 'power' && this.current.id === 'power') this.w.hud.tag(`Use ${this.keys.power} for power`, 'info', overHead(you), 1400);
     }
     // Show where the coach's feed will land, like in a real match.
     const s = incoming && this.bouncesSinceHit === 0 ? this.path.find((p) => p.bounces >= 1) : undefined;
@@ -436,6 +445,7 @@ export class TutorialMode implements GameMode {
     const k = this.lastKind;
     if (id === 'drive') this.succeed('In!');
     else if (id === 'soft' && (k === 'drop' || k === 'reset' || k === 'lob')) this.succeed('Great drop!');
+    else if (id === 'power' && (k === 'blast' || k === 'speedup' || k === 'smash')) this.succeed('Boom!');
     else if (id === 'dink' && k === 'dink' && !this.lastVolleyInKitchen) this.succeed('Nice dink!');
     this.endBall();
   }

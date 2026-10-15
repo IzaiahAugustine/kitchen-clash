@@ -188,7 +188,8 @@ export class PracticeMode implements GameMode {
   describe(): string {
     return `
       <div class="title">Kitchen Clash <small>Practice · Phase 2</small></div>
-      <div><b>WASD</b> move + <b>J</b> <b>K</b> hit &nbsp;·&nbsp; or <b>Arrows</b> move + <b>Z</b> <b>X</b> hit</div>
+      <div><b>WASD</b> move + <b>J</b> <b>K</b> <b>L</b> hit &nbsp;·&nbsp; or <b>Arrows</b> + <b>Z</b> <b>X</b> <b>C</b></div>
+      <div><b>L</b> Power: hard and fast, but it has to be timed well</div>
       <div><b>J / Z</b> Drive · dink at the kitchen · smash high balls</div>
       <div><b>K / X</b> Soft · drop from the back · reset midcourt · lob at the kitchen</div>
       <div><b>Enter</b> Feed now</div>

@@ -43,19 +43,21 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
  * The Drive button serves harder and deeper (riskier); Soft is a safe, high serve.
  */
 export function planServe(server: Player, setup: ServeSetup, aim: Aim, button: ShotButton, from: Vector3): ShotPlan {
-  const hard = button === 'drive';
+  // Power serves are the fastest and riskiest; Drive is hard; Soft is safe.
+  const powered = button === 'power';
+  const hard = button === 'drive' || powered;
   const receiverSide = -server.side;
   const depth = Math.min(20.5, Math.max(10, (hard ? 17 : 15) + aim.y * 3));
   const boxCenter = setup.boxSide * 5;
   let x = boxCenter + server.right.x * aim.x * 3.5;
   x = setup.boxSide * Math.min(9.2, Math.max(0.8, setup.boxSide * x));
-  const scatter = hard ? 1.4 : 0.7;
+  const scatter = powered ? 1.9 : hard ? 1.4 : 0.7;
   const target = new Vector3(x + rand(-1, 1) * scatter, 0, receiverSide * (depth + rand(-1, 1) * scatter));
   return {
     target,
-    flightTime: hard ? 1.0 : 1.4,
-    spin: topspin(target.clone().sub(from), hard ? 40 : 15),
-    clearance: hard ? 0.4 : 1.0,
+    flightTime: powered ? 0.82 : hard ? 1.0 : 1.4,
+    spin: topspin(target.clone().sub(from), powered ? 55 : hard ? 40 : 15),
+    clearance: powered ? 0.25 : hard ? 0.4 : 1.0,
   };
 }
 

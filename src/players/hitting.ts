@@ -203,7 +203,7 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
   const kind = swing.kind as ShotKind;
   const timing = swing.timing ?? { grade: 'good', error: 0 };
   const from = ball.pos.clone();
-  const plan = swing.plan ?? planShot(kind, from, player.side, swing.hand, aim, timing);
+  const plan = swing.plan ?? planShot(kind, from, player.side, swing.hand, aim, timing, swing.button === 'power');
   const sol = solveShot({
     from,
     target: plan.target,

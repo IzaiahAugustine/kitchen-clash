@@ -539,12 +539,12 @@ export class MatchMode implements GameMode {
     }
     const you = this.you;
     const yourServe = this.phase === 'preServe' && you && this.server === you;
-    const hint = yourServe ? '<div class="big ok">Your serve! J = hard serve · K = safe serve (aim with A/D)</div>' : '';
+    const hint = yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = power (aim with A/D)</div>' : '';
     const partner = this.doubles && you ? '<div class="dim">Doubles: your teal partner covers the other half</div>' : '';
     return `
       <div class="title">Kitchen Clash <small>vs ${this.teamNames[1]}${this.doubles ? ' · Doubles' : ''}</small></div>
-      <div><b>WASD</b> move + <b>J</b> <b>K</b> hit &nbsp;·&nbsp; or <b>Arrows</b> move + <b>Z</b> <b>X</b> hit</div>
-      <div><b>J</b> Drive · dink · smash &nbsp; <b>K</b> Soft · drop · reset · lob</div>
+      <div><b>WASD</b> move + <b>J</b> <b>K</b> <b>L</b> hit &nbsp;·&nbsp; or <b>Arrows</b> + <b>Z</b> <b>X</b> <b>C</b></div>
+      <div><b>J</b> Drive · dink &nbsp; <b>K</b> Soft · drop · lob &nbsp; <b>L</b> Power (risky!)</div>
       ${partner}${hint}
       <hr/>
       <div>Last shot: ${this.lastShot}</div>`;
@@ -561,16 +561,18 @@ export class MatchMode implements GameMode {
   private onGoodHit(s: Seat, report: ShotReport): void {
     if (!s.human) return;
     const g = GRADE_TEXT[report.timing.grade];
+    const powered = s.player.swing?.button === 'power';
     if (report.timing.grade === 'perfect') {
       this.perfects++;
       this.w.fx?.burst(this.w.ball.pos, 1, true);
-      // A Perfect put-away gets a tiny freeze-frame and a camera kick.
-      if (report.kind === 'smash' || report.mph > 40) {
-        this.w.fx?.hitstop(0.07);
-        this.w.fx?.shake(0.5);
+      // A Perfect put-away or power shot gets a tiny freeze-frame and a camera kick.
+      if (powered || report.kind === 'smash' || report.mph > 40) {
+        this.w.fx?.hitstop(powered ? 0.09 : 0.07);
+        this.w.fx?.shake(powered ? 0.7 : 0.5);
       }
     }
-    if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.tag(g.text, g.kind, overHead(s.player));
+    const label = powered && report.timing.grade === 'perfect' ? 'POWER!' : g.text;
+    if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.tag(label, g.kind, overHead(s.player));
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }
 

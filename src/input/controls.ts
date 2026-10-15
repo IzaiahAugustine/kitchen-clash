@@ -11,6 +11,8 @@ export interface ControlFrame {
   drive: boolean;
   /** Shot button 2 (Soft / Lob) pressed this frame. */
   soft: boolean;
+  /** Shot button 3 (Power) pressed this frame. */
+  power: boolean;
   feed: boolean;
   pause: boolean;
 }
@@ -24,13 +26,15 @@ const KEYS = {
   // or Z + X for the left hand when steering with the arrow keys.
   drive: ['KeyJ', 'KeyZ'],
   soft: ['KeyK', 'KeyX'],
+  // Power sits right next to them: L with J/K, or C with Z/X.
+  power: ['KeyL', 'KeyC'],
   feed: ['Enter'],
   pause: ['KeyP', 'Escape'],
 };
 
 export class Controls {
   readonly pad = new GamepadInput();
-  frame: ControlFrame = { moveX: 0, moveY: 0, drive: false, soft: false, feed: false, pause: false };
+  frame: ControlFrame = { moveX: 0, moveY: 0, drive: false, soft: false, power: false, feed: false, pause: false };
 
   /** On-screen phone controls, when present. */
   touch: TouchControls | null = null;
@@ -64,6 +68,7 @@ export class Controls {
       moveY: y,
       drive: pressed(KEYS.drive) || p.pressed(PAD.A) || !!t?.take('drive'),
       soft: pressed(KEYS.soft) || p.pressed(PAD.X) || p.pressed(PAD.B) || !!t?.take('soft'),
+      power: pressed(KEYS.power) || p.pressed(PAD.RB) || p.pressed(PAD.RT) || !!t?.take('power'),
       feed: pressed(KEYS.feed) || p.pressed(PAD.Y),
       pause: pressed(KEYS.pause) || p.pressed(PAD.START) || !!t?.take('pause'),
     };

@@ -5,10 +5,33 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { hasDebugFlag } from '../game/debugFlags';
+import { isTouchDevice } from '../input/touch';
 
-/** Highest render resolution multiplier we'll use (Retina screens report 2). */
-const MAX_PIXEL_RATIO = 1.5;
-const MIN_PIXEL_RATIO = 0.75;
+/**
+ * Highest render resolution multiplier. Phones have small, very dense screens (3x), so they
+ * need more than laptops (2x Retina) to look sharp.
+ */
+const MAX_PIXEL_RATIO = isTouchDevice() ? 2 : 1.5;
+/** Never render below the screen's own resolution: that's what makes things blurry. */
+const MIN_PIXEL_RATIO = 1;
+
+/** One rung of the quality ladder: resolution and shadow detail (0 = no player shadows). */
+interface QualityLevel {
+  pixelRatio: number;
+  shadowSize: number;
+}
+
+/**
+ * Best first. When frames run slow the game steps down one rung at a time, giving up shadow
+ * detail before resolution, and resolution before shadows entirely.
+ */
+function qualityLadder(): QualityLevel[] {
+  const top = Math.max(MIN_PIXEL_RATIO, Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+  const levels: QualityLevel[] = [{ pixelRatio: top, shadowSize: 2048 }, { pixelRatio: top, shadowSize: 1024 }];
+  for (let pr = top - 0.25; pr >= MIN_PIXEL_RATIO - 1e-6; pr -= 0.25) levels.push({ pixelRatio: pr, shadowSize: 1024 });
+  levels.push({ pixelRatio: MIN_PIXEL_RATIO, shadowSize: 0 });
+  return levels;
+}
 
 /**
  * Renderer, scene, sky and lights. Resolution adapts to keep the frame rate smooth.
@@ -21,13 +44,17 @@ export class Stage {
   private composer: EffectComposer | null = null;
   private ao: GTAOPass | null = null;
   private camera: THREE.Camera | null = null;
-  private pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+  private ladder = qualityLadder();
+  /** Phones start one rung down (lighter shadows), at full sharpness. */
+  private level = isTouchDevice() ? 1 : 0;
   private frameTimes: number[] = [];
   private lastAdjust = 0;
+  /** After stepping down, wait this long before trying a higher rung again (no flip-flopping). */
+  private holdUntil = 0;
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(this.pixelRatio);
+    this.renderer.setPixelRatio(this.ladder[this.level].pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
@@ -48,7 +75,8 @@ export class Stage {
     this.sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
     this.sun.position.set(-30, 70, 30);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    const shadow = this.ladder[this.level].shadowSize || 1024;
+    this.sun.shadow.mapSize.set(shadow, shadow);
     const sc = this.sun.shadow.camera;
     sc.left = -30;
     sc.right = 30;
@@ -96,8 +124,8 @@ export class Stage {
   }
 
   /**
-   * Call once per frame with the real frame time. If frames are running slow, render at a
-   * lower resolution; if there's headroom, step back up.
+   * Call once per frame with the real frame time. If frames run slow, step down the quality
+   * ladder; with clear headroom, step back up.
    */
   adaptQuality(dt: number, now: number): void {
     this.frameTimes.push(dt);
@@ -105,17 +133,34 @@ export class Stage {
     if (now - this.lastAdjust < 2000 || this.frameTimes.length < 60) return;
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
     const typical = sorted[Math.floor(sorted.length * 0.5)];
-    const max = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
-    let next = this.pixelRatio;
-    if (typical > 1 / 50) next = Math.max(MIN_PIXEL_RATIO, this.pixelRatio - 0.25);
-    else if (typical < 1 / 58 && this.pixelRatio < max) next = Math.min(max, this.pixelRatio + 0.25);
-    if (next !== this.pixelRatio) {
-      this.pixelRatio = next;
-      this.renderer.setPixelRatio(next);
-      this.resize();
-      this.frameTimes = [];
+    let next = this.level;
+    if (typical > 1 / 48 && this.level < this.ladder.length - 1) {
+      next = this.level + 1;
+      this.holdUntil = now + 8000;
+    } else if (typical < 1 / 58 && this.level > 0 && now > this.holdUntil) {
+      next = this.level - 1;
     }
+    if (next !== this.level) this.applyLevel(next);
     this.lastAdjust = now;
+  }
+
+  private applyLevel(i: number): void {
+    const prev = this.ladder[this.level];
+    const q = this.ladder[i];
+    this.level = i;
+    if (q.pixelRatio !== prev.pixelRatio) {
+      this.renderer.setPixelRatio(q.pixelRatio);
+      this.resize();
+    }
+    if (q.shadowSize !== prev.shadowSize) {
+      this.sun.castShadow = q.shadowSize > 0;
+      if (q.shadowSize > 0) {
+        this.sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
+        this.sun.shadow.map?.dispose();
+        this.sun.shadow.map = null;
+      }
+    }
+    this.frameTimes = [];
   }
 
   resize(): void {

@@ -4,6 +4,8 @@ export const PAD = {
   B: 1,
   X: 2,
   Y: 3,
+  RB: 5,
+  RT: 7,
   START: 9,
   UP: 12,
   DOWN: 13,

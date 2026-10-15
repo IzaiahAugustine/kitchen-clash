@@ -3,8 +3,9 @@ import { COURT, type Side } from '../game/court';
 import { topspin } from '../physics/trajectory';
 import type { Hand } from './body';
 
-export type ShotKind = 'drive' | 'smash' | 'dink' | 'drop' | 'reset' | 'lob' | 'serve';
-export type ShotButton = 'drive' | 'soft';
+export type ShotKind = 'drive' | 'smash' | 'dink' | 'drop' | 'reset' | 'lob' | 'serve' | 'speedup' | 'blast';
+/** The three hit buttons: Drive (J), Soft (K) and Power (L). */
+export type ShotButton = 'drive' | 'soft' | 'power';
 
 export type Grade = 'perfect' | 'good' | 'early' | 'late';
 export interface Timing {
@@ -21,6 +22,8 @@ export const SHOT_NAMES: Record<ShotKind, string> = {
   reset: 'Reset',
   lob: 'Lob',
   serve: 'Serve',
+  speedup: 'Speed-up',
+  blast: 'Power drive',
 };
 
 /**
@@ -31,6 +34,11 @@ export const SHOT_NAMES: Record<ShotKind, string> = {
 export function chooseShotKind(button: ShotButton, contact: Vector3): ShotKind {
   const fromNet = Math.abs(contact.z);
   const atKitchen = fromNet <= COURT.kitchenDepth + 3;
+  if (button === 'power') {
+    // Power: a smash on a high ball, a speed-up at the kitchen, a blistering drive from the back.
+    if (contact.y >= 3.4) return 'smash';
+    return atKitchen ? 'speedup' : 'blast';
+  }
   if (button === 'drive') {
     if (!atKitchen) return 'drive';
     return contact.y >= 3.4 ? 'smash' : 'dink';
@@ -60,6 +68,8 @@ const SPECS: Record<ShotKind, ShotSpec> = {
   reset: { depth: [3.5, 6.5], time: 1.25, spin: 0, clearance: 0.3, width: 7.5 },
   lob: { depth: [17.5, 20.5], time: 2.2, spin: 30, clearance: 2.5, width: 7 },
   serve: { depth: [12, 19], time: 1.25, spin: 20, clearance: 1.0, width: 7 },
+  speedup: { depth: [8, 15], time: 0.42, spin: 40, clearance: 0.06, width: 7.5 },
+  blast: { depth: [14, 20], time: 0.5, spin: 75, clearance: 0.12, width: 8.5 },
 };
 
 /** Aim from the stick while swinging: x = hitter's right, y = deeper. Each -1..1. */
@@ -86,6 +96,8 @@ export function planShot(
   hand: Hand,
   aim: Aim,
   timing: Timing,
+  /** Hit with the Power button: faster, but mistimed power shots go badly wrong. */
+  powered = false,
 ): ShotPlan {
   const spec = SPECS[kind];
   // The hitter's right is +x on the near side and -x on the far side.
@@ -96,16 +108,24 @@ export function planShot(
   let scatter = 1;
   let clearance: number | undefined = spec.clearance;
 
-  const power = kind === 'drive' || kind === 'smash';
+  const power = kind === 'drive' || kind === 'smash' || kind === 'speedup' || kind === 'blast';
+  if (powered && kind === 'smash') time *= 0.8;
   if (timing.grade === 'perfect') {
-    scatter = 0.35;
-    if (power) time *= 0.9;
+    scatter = powered ? 0.3 : 0.35;
+    if (power) time *= powered ? 0.88 : 0.9;
+  } else if (timing.grade === 'good' && powered) {
+    // Power without perfect timing is loose: sometimes it sails long or wide.
+    scatter = 1.4;
+    if (Math.random() < 0.3) {
+      lateral += (Math.random() < 0.5 ? -1 : 1) * rand(3, 5.5);
+      depth += rand(3, 6);
+    }
   } else if (timing.grade === 'early' || timing.grade === 'late') {
     // A mistimed shot goes wrong one of three ways, more likely the worse the timing.
     const bad = Math.min(1, (timing.error - 0.12) / 0.2);
     const roll = Math.random();
     const soft = !power && kind !== 'lob';
-    if (roll < 0.25 + 0.2 * bad) {
+    if (roll < 0.25 + 0.2 * bad + (powered ? 0.15 : 0)) {
       // Dumped: hit low and flat, it may find the net.
       time *= 0.72;
       clearance = undefined;
@@ -116,7 +136,7 @@ export function planShot(
       clearance = 2.5;
     } else {
       // Sprayed: early pulls across your body, late pushes the other way, with less pace.
-      const miss = 2.5 + Math.max(0, timing.error - 0.12) * 30;
+      const miss = (2.5 + Math.max(0, timing.error - 0.12) * 30) * (powered ? 1.6 : 1);
       const dir = (timing.grade === 'early' ? -1 : 1) * (hand === 'fore' ? 1 : -1);
       lateral += dir * miss;
       depth += rand(-2.5, 2.5);

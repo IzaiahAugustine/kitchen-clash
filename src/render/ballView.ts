@@ -114,8 +114,10 @@ export class BallView {
   private buildTrail(camera: THREE.Camera, speed: number): void {
     const n = this.points.length;
     const width = PHYS.ballRadius * VISUAL_SCALE * 0.9;
-    // Faster balls leave a more visible streak.
+    // Faster balls leave a more visible streak, glowing orange on the really hard hits.
     const strength = Math.min(0.75, 0.2 + speed / 90);
+    const hot = Math.min(1, Math.max(0, (speed - 50) / 25));
+    (this.trail.material as THREE.ShaderMaterial).uniforms.color.value.setRGB(1, 0.96 - hot * 0.5, 0.78 - hot * 0.62);
     for (let i = 0; i < TRAIL_POINTS; i++) {
       const p = this.points[Math.min(i, n - 1)];
       if (!p || n < 2) {

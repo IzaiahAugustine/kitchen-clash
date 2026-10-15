@@ -320,3 +320,5 @@ body.touch .hud-panel { display: none; }
   .scoreboard { top: 6px; left: 8px; transform: scale(0.6); transform-origin: top left; }
   .hud-toasts { padding-top: 40px; }
 }
+
+.touch-power { right: calc(40px + env(safe-area-inset-right)); bottom: calc(142px + env(safe-area-inset-bottom)); width: 70px; height: 70px; font-size: 15px; background: #ff5a5f; color: var(--cream); -webkit-text-stroke: 1px var(--ink); }

@@ -173,7 +173,7 @@ export class AiPlayer {
       if (c.pos.y >= 3.4) button = 'drive'; // put away the high ball
       else if (smart && !c.bounced && c.pos.y >= 2.6 && Math.random() < 0.45) {
         // A dink that sat up a little: speed it up with a hard volley at the opponent.
-        kind = 'drive';
+        kind = 'speedup';
         depth = rand(-0.6, 0.2);
       } else if (oppBack && smart && !c.bounced && c.pos.y >= 2.2) {
         // Opponent stuck back: punch the volley deep instead of dinking.
