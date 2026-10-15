@@ -34,17 +34,22 @@ export interface ContactQuery {
   reaction?: number;
   /** Ball must bounce first (two-bounce rule). */
   mustBounce?: boolean;
+  /** If nothing is reachable, return the closest-to-reachable point anyway (chase it down). */
+  bestEffort?: boolean;
 }
 
 /**
  * Finds where this player can hit the ball. Prefers the moment the ball crosses the
- * player's hitting plane (just in front of the body); otherwise the last reachable point
- * before the ball dies.
+ * player's hitting plane (just in front of the body); otherwise the earliest point they
+ * can get to (a stable target, so they don't chase a spot that keeps sliding away).
  */
 export function findContact(player: Player, q: ContactQuery, flight: number): Contact | null {
   const planeZ = player.pos.z + player.forward.z * BODY.contactForward;
   let fallback: PathSample | null = null;
   let fallbackBounced = false;
+  let closest: PathSample | null = null;
+  let closestBounced = false;
+  let closestShort = Infinity;
   let prevZ = Number.NaN;
   for (const s of q.path) {
     if (s.t > q.maxTime || s.netted) break;
@@ -63,12 +68,23 @@ export function findContact(player: Player, q: ContactQuery, flight: number): Co
     const dx = sx - player.pos.x;
     const dz = sz - player.pos.z;
     const need = Math.hypot(dx, dz);
-    if (need > q.slack + player.coverable(s.t - (q.reaction ?? 0), dx, dz)) continue;
+    const short = need - q.slack - player.coverable(s.t - (q.reaction ?? 0), dx, dz);
+    if (short > 0) {
+      if (short < closestShort) {
+        closestShort = short;
+        closest = s;
+        closestBounced = totalBounces > 0;
+      }
+      continue;
+    }
     if (crossed) return makeContact(player, s, flight, totalBounces > 0);
-    fallback = s;
-    fallbackBounced = totalBounces > 0;
+    if (!fallback) {
+      fallback = s;
+      fallbackBounced = totalBounces > 0;
+    }
   }
-  return fallback ? makeContact(player, fallback, flight, fallbackBounced) : null;
+  if (fallback) return makeContact(player, fallback, flight, fallbackBounced);
+  return q.bestEffort && closest ? makeContact(player, closest, flight, closestBounced) : null;
 }
 
 function handFor(player: Player, ballX: number): Hand {
@@ -171,7 +187,8 @@ export function chooseHumanContact(player: Player, q: ContactQuery, flight: numb
     const safe = findContact(player, { ...q, mustBounce: true }, flight);
     if (safe) return safe;
   }
-  return findContact(player, q, flight);
+  // Out of reach? Still go for it: the swing becomes a stretch or a "Too far!" miss.
+  return findContact(player, q, flight) ?? findContact(player, { ...q, bestEffort: true }, flight);
 }
 
 export interface ShotReport {

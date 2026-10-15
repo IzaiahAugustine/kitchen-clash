@@ -72,7 +72,8 @@ export interface ShotPlan {
   target: Vector3;
   flightTime: number;
   spin: Vector3;
-  clearance: number;
+  /** Net clearance to guarantee; undefined lets a bad shot find the net. */
+  clearance: number | undefined;
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -93,18 +94,35 @@ export function planShot(
   let lateral = Math.abs(aim.x) >= 0.2 ? aim.x * spec.width : right * (from.x * 0.35) + rand(-1.5, 1.5);
   let time = spec.time;
   let scatter = 1;
+  let clearance: number | undefined = spec.clearance;
 
   const power = kind === 'drive' || kind === 'smash';
   if (timing.grade === 'perfect') {
     scatter = 0.35;
     if (power) time *= 0.9;
   } else if (timing.grade === 'early' || timing.grade === 'late') {
-    // Early pulls the ball across your body, late pushes it the other way, and it loses pace.
-    const miss = 2.5 + Math.max(0, timing.error - 0.12) * 30;
-    const dir = (timing.grade === 'early' ? -1 : 1) * (hand === 'fore' ? 1 : -1);
-    lateral += dir * miss;
-    depth += rand(-2.5, 2.5);
-    if (power) time *= 1.15;
+    // A mistimed shot goes wrong one of three ways, more likely the worse the timing.
+    const bad = Math.min(1, (timing.error - 0.12) / 0.2);
+    const roll = Math.random();
+    const soft = !power && kind !== 'lob';
+    if (roll < 0.25 + 0.2 * bad) {
+      // Dumped: hit low and flat, it may find the net.
+      time *= 0.72;
+      clearance = undefined;
+    } else if (soft && roll < 0.55 + 0.15 * bad) {
+      // Popped up: a soft shot that floats high, begging to be smashed.
+      time *= 1.45;
+      depth -= 1;
+      clearance = 2.5;
+    } else {
+      // Sprayed: early pulls across your body, late pushes the other way, with less pace.
+      const miss = 2.5 + Math.max(0, timing.error - 0.12) * 30;
+      const dir = (timing.grade === 'early' ? -1 : 1) * (hand === 'fore' ? 1 : -1);
+      lateral += dir * miss;
+      depth += rand(-2.5, 2.5);
+      if (power) time *= 1.15;
+      clearance = spec.clearance * 0.3;
+    }
     scatter = 1.5;
   }
 
@@ -117,6 +135,6 @@ export function planShot(
     target,
     flightTime: time,
     spin: topspin(target.clone().sub(from), spec.spin),
-    clearance: timing.grade === 'perfect' || timing.grade === 'good' ? spec.clearance : spec.clearance * 0.3,
+    clearance,
   };
 }

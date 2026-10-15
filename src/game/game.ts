@@ -14,6 +14,7 @@ import { Stage } from '../render/stage';
 import { Hud } from '../ui/hud';
 import { debugFlag, hasDebugFlag } from './debugFlags';
 import type { GameMode, World } from './mode';
+import { PROFILES, parseDifficulty } from '../ai/difficulty';
 import { DEFAULT_SCORING } from '../rules/scoring';
 import { Scoreboard } from '../ui/scoreboard';
 import { MatchMode } from './matchMode';
@@ -68,9 +69,21 @@ export class Game {
     if (!template) this.mode = new BallLab(this.world);
     else if (hasDebugFlag('practice')) this.mode = new PracticeMode(this.world, template);
     else {
-      const scoreboard = new Scoreboard(this.uiRoot, ['YOU', 'BOT'], ['#ff6b35', '#7b2ff7']);
+      // ?difficulty=easy|medium|hard (opponent), ?watch for AI vs AI (?near=… for your side's AI)
+      const far = parseDifficulty(debugFlag('difficulty'));
+      const watch = hasDebugFlag('watch') || hasDebugFlag('autoplay');
+      const near = watch ? parseDifficulty(debugFlag('near'), far) : 'human';
       const scoring = debugFlag('scoring') === 'rally' ? 'rally' : 'sideout';
-      this.mode = new MatchMode(this.world, template, scoreboard, { ...DEFAULT_SCORING, mode: scoring });
+      const names: [string, string] = [
+        near === 'human' ? 'YOU' : `CPU ${PROFILES[near].label.toUpperCase()}`,
+        `CPU ${PROFILES[far].label.toUpperCase()}`,
+      ];
+      const scoreboard = new Scoreboard(this.uiRoot, names, ['#ff6b35', '#7b2ff7']);
+      this.mode = new MatchMode(this.world, template, scoreboard, {
+        scoring: { ...DEFAULT_SCORING, mode: scoring },
+        near,
+        far,
+      });
     }
     // Debug: `?warp=6` fast-forwards 6 seconds of play before the first frame (for screenshots).
     const warp = Number(debugFlag('warp') ?? 0);
@@ -122,6 +135,10 @@ export class Game {
       this.timeScale = this.timeScale === 1 ? 0.25 : 1;
       this.world.hud.flash(this.timeScale === 1 ? 'Normal speed' : 'Slow-mo');
     }
+    if (k.wasPressed('KeyF')) {
+      this.timeScale = this.timeScale === 3 ? 1 : 3;
+      this.world.hud.flash(this.timeScale === 3 ? 'Fast-forward' : 'Normal speed');
+    }
     if (pausePressed) this.paused = !this.paused;
     if (k.wasPressed('KeyC')) this.toggleOrbit();
   }
@@ -140,7 +157,8 @@ export class Game {
   private statusLine(): string {
     const flags = [
       this.paused ? '<span class="bad">PAUSED</span>' : '',
-      this.timeScale !== 1 ? '<span class="ok">SLOW-MO</span>' : '',
+      this.timeScale < 1 ? '<span class="ok">SLOW-MO</span>' : '',
+      this.timeScale > 1 ? '<span class="ok">FAST ×3</span>' : '',
       this.orbit ? '<span class="ok">FREE CAM</span> (drag to orbit, scroll to zoom)' : '',
     ].filter(Boolean);
     return `<div class="dim"><b>P</b> Pause · <b>T</b> Slow-mo · <b>C</b> Free camera ${flags.join(' ')}</div>`;
