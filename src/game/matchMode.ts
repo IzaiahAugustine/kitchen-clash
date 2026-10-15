@@ -22,7 +22,7 @@ import { HumanController } from '../players/humanController';
 import { PALETTES, type Palette } from '../players/palette';
 import { LUNGE_REACH, Player, type Contact, type Swing } from '../players/player';
 import { PlayerView } from '../players/playerView';
-import { SHOT_NAMES, type Aim, type ShotButton } from '../players/shots';
+import { SET_ZONE, SHOT_NAMES, type Aim, type ShotButton } from '../players/shots';
 import { BounceMarkers } from '../render/markers';
 import { FAULT_TEXT, Referee, type Fault } from '../rules/referee';
 import {
@@ -172,6 +172,9 @@ export class MatchMode implements GameMode {
   private log: string[] = [];
   private longestRally = 0;
   private perfects = 0;
+  /** "Set at the net!" tips: shown a few times per match, once per rally at most. */
+  private setTips = 0;
+  private setThisRally = false;
   private ralliesWon: [number, number] = [0, 0];
   /** Called when a game with a human player ends (AI vs AI just starts a new game). */
   onGameOver: ((r: MatchResult) => void) | null = null;
@@ -301,7 +304,9 @@ export class MatchMode implements GameMode {
     this.pendingFault = null;
     this.lastHitter = null;
     this.bouncesSinceHit = 0;
+    this.setThisRally = false;
     for (const s of this.seats) {
+      s.player.spinStreak = 0;
       s.player.swing = null;
       s.player.vel.set(0, 0, 0);
       s.player.intent.set(0, 0, 0);
@@ -469,6 +474,12 @@ export class MatchMode implements GameMode {
   private updateHuman(s: Seat, ctl: HumanController, time: number): void {
     const p = s.player;
     const ball = this.w.ball;
+    // Teach "own the net" without a lesson: a quick tag the first few times you get set there.
+    if (this.phase === 'rally' && !this.setThisRally && this.setTips < 3 && !s.remote && Math.abs(p.pos.z) <= SET_ZONE && Math.hypot(p.vel.x, p.vel.z) < 0.5) {
+      this.setThisRally = true;
+      this.setTips++;
+      this.w.hud.tag('Set at the net!', 'good', overHead(p), 1100);
+    }
     const incoming = this.incomingTo(s.team);
     const preview = incoming && this.ownsBall(s) && !p.swing ? findContact(p, this.query(1.6), ball.flight) : null;
     const button = ctl.update(this.w.controls.frame, preview);

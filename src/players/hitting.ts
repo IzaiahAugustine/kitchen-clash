@@ -233,6 +233,9 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
     planShot(kind, from, player.side, swing.hand, aim, timing, spun, {
       incomingSpeed: ball.vel.length(),
       hitterSpeed: Math.hypot(player.vel.x, player.vel.z),
+      // Near side faces -z, far side +z: moving toward the net is -side * vel.z.
+      towardNet: -player.side * player.vel.z,
+      volley: !!swing.contact && !swing.contact.bounced,
     });
   const sol = solveShot({
     from,

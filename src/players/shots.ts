@@ -95,6 +95,9 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 /** Net height (ft) the ball has to be above to attack it near the net. */
 const ATTACK_HEIGHT = 2.7;
+/** At the kitchen line: this close to the net (ft) and moving slower than SET_SPEED counts as "set". */
+export const SET_ZONE = COURT.kitchenDepth + 3;
+export const SET_SPEED = 3;
 /** Within this distance of the net, low balls can't be attacked. */
 const ATTACK_ZONE = 12;
 
@@ -132,8 +135,11 @@ export function planShot(
   timing: Timing,
   /** Hit with the Spin button: tight timing, and mistimed spin shots go badly wrong. */
   spun = false,
-  /** How fast the ball was coming (ft/s) and how fast the hitter was moving (ft/s). */
-  situation: { incomingSpeed?: number; hitterSpeed?: number } = {},
+  /**
+   * How fast the ball was coming (ft/s), how fast the hitter was moving (ft/s) and how much of
+   * that was toward the net, and whether it's a volley.
+   */
+  situation: { incomingSpeed?: number; hitterSpeed?: number; towardNet?: number; volley?: boolean } = {},
 ): ShotPlan {
   const spec = SPECS[kind];
   // The hitter's right is +x on the near side and -x on the far side.
@@ -196,6 +202,32 @@ export function planShot(
     // Rushed: the swing is late on the pace and the ball flies long or wide.
     lateral += (Math.random() < 0.5 ? -1 : 1) * rand(2, 4);
     depth += rand(1, 4);
+  }
+
+  // Owning the net: planted at the kitchen line, volleys and dinks are crisper, and volleys
+  // can be punched harder and at sharper angles.
+  const fromNet = Math.abs(from.z);
+  const set = fromNet <= SET_ZONE && (situation.hitterSpeed ?? 0) < SET_SPEED;
+  if (set && kind !== 'lob') {
+    scatter *= 0.7;
+    if (situation.volley && kind !== 'dink' && kind !== 'reset') {
+      time *= 0.93;
+      lateral *= 1.12;
+    }
+  }
+  // No man's land: charging through midcourt with the ball at your feet is hard to handle.
+  const charging = (situation.towardNet ?? 0) > 4;
+  if (charging && fromNet > SET_ZONE && fromNet < 17 && from.y < 1.6 && timing.grade !== 'perfect') {
+    scatter += 1.4;
+    const r = Math.random();
+    if (r < 0.25) {
+      clearance = undefined; // dumped into the net
+      time *= 0.8;
+    } else if (r < 0.55) {
+      clearance = 2.2; // popped up
+      time *= 1.4;
+      depth -= 1;
+    }
   }
 
   if (low > 0) {
