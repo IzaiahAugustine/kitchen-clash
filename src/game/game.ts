@@ -175,10 +175,9 @@ export class Game {
     this.sound.setMusic(true);
     this.sound.setAmbience(true);
     const s = this.settings;
-    const art = this.titleArt ? `<img class="title-art" src="${this.titleArt}" alt="">` : '';
     this.menu.show({
       variant: 'title',
-      header: `${art}<div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
+      header: `<div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
         { label: '▶ Play vs AI', primary: true, action: () => this.startMatch('human', s.difficulty) },
         this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
@@ -290,8 +289,14 @@ export class Game {
       try {
         const res = await fetch(url, { method: 'HEAD' });
         if (res.ok && (res.headers.get('content-type') ?? '').startsWith('image/')) {
+          // Preload so the title screen doesn't flash empty, then use it as the backdrop.
+          await new Promise((done) => {
+            const img = new Image();
+            img.onload = img.onerror = done;
+            img.src = url;
+          });
           this.titleArt = url;
-          if (this.state === 'title') this.showTitle();
+          document.documentElement.style.setProperty('--title-art', `url("${url}")`);
           return;
         }
       } catch {
@@ -307,7 +312,9 @@ export class Game {
     const dt = Math.min((now - this.lastFrameAt) / 1000, 0.1);
     this.lastFrameAt = now;
     this.advance(dt);
-    this.stage.render(this.cam.camera);
+    // The title art covers the 3D scene, so don't spend the GPU drawing it.
+    const covered = this.state === 'title' && this.titleArt !== null && this.menu.open;
+    if (!covered) this.stage.render(this.cam.camera);
     this.stage.adaptQuality(dt, now);
     this.world.keys.endFrame();
   }
