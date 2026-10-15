@@ -7,6 +7,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "models": "node tools/build-models.mjs",
+    "build:crazygames": "tsc --noEmit && VITE_PORTAL=crazygames vite build --outDir dist-crazygames",
     "deploy": "npm run build && npx -y firebase-tools@13 deploy --only hosting:game"
   },
   "description": "Kitchen Clash — an arcade-style 3D pickleball game for the browser",

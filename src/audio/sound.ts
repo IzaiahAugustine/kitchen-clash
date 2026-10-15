@@ -32,6 +32,8 @@ export class Sound {
   private musicLevel = 0.6;
   private wantMusic = true;
   private wantAmbience = false;
+  private master: GainNode | null = null;
+  private muted = false;
 
   constructor() {
     // Browsers only allow audio after the player interacts with the page.
@@ -41,6 +43,12 @@ export class Sound {
     };
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
+  }
+
+  /** Silences everything (a game portal's mute button, or while an ad plays). */
+  setMuted(on: boolean): void {
+    this.muted = on;
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(on ? 0 : 1, this.ctx.currentTime, 0.02);
   }
 
   /** @param sfx 0..10 @param music 0..10 */
@@ -87,12 +95,15 @@ export class Sound {
     if (this.ctx) return;
     const ctx = new AudioContext();
     this.ctx = ctx;
+    this.master = ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : 1;
+    this.master.connect(ctx.destination);
     this.sfxGain = ctx.createGain();
     this.sfxGain.gain.value = this.sfxLevel;
-    this.sfxGain.connect(ctx.destination);
+    this.sfxGain.connect(this.master);
     this.musicGain = ctx.createGain();
     this.musicGain.gain.value = 0;
-    this.musicGain.connect(ctx.destination);
+    this.musicGain.connect(this.master);
     this.ambienceGain = ctx.createGain();
     this.ambienceGain.gain.value = 0;
     this.ambienceGain.connect(this.sfxGain);

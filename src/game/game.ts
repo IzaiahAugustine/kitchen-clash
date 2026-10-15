@@ -44,6 +44,7 @@ import {
 } from '../players/look';
 import { TouchControls, isTouchDevice } from '../input/touch';
 import { loadSettings, saveSettings, type CameraPreset, type Settings } from './settings';
+import { portal } from '../platform/portal';
 
 type AppState = 'title' | 'playing' | 'paused' | 'results';
 
@@ -61,6 +62,8 @@ export class Game {
   private cam: ArcadeCamera;
   private world: World;
   private mode: GameMode | null = null;
+  /** A portal ad is playing: the game is silent. */
+  private adPlaying = false;
   private template: THREE.Object3D | null = null;
   private state: AppState = 'title';
   private settings = loadSettings();
@@ -140,6 +143,15 @@ export class Game {
       document.body.classList.add('touch');
     }
     this.applySettings();
+    portal.onMuteChange = () => this.sound.setMuted(portal.muted || this.adPlaying);
+    portal.onAdStart = () => {
+      this.adPlaying = true;
+      this.sound.setMuted(true);
+    };
+    portal.onAdEnd = () => {
+      this.adPlaying = false;
+      this.sound.setMuted(portal.muted);
+    };
 
     window.addEventListener('resize', () => {
       this.stage.resize();
@@ -558,6 +570,7 @@ export class Game {
 
   private enterPlaying(): void {
     this.state = 'playing';
+    portal.gameplayStart();
     this.menu.hide();
     this.touch?.setVisible(true);
     this.world.hud.muted = false;
@@ -569,6 +582,7 @@ export class Game {
   /** Title screen, with a CPU match playing behind it. */
   private showTitle(): void {
     this.state = 'title';
+    portal.gameplayStop();
     this.touch?.setVisible(false);
     this.setVenue(this.settings.court);
     this.setMode(this.matchMode('medium', 'hard', this.settings.format === 'doubles'));
@@ -642,6 +656,7 @@ export class Game {
         this.option('Sound effects', vols, () => s.sfxVolume, (i) => (s.sfxVolume = i)),
         this.option('Music', vols, () => s.musicVolume, (i) => (s.musicVolume = i)),
         this.option('Graphics', ['Standard', 'High'], () => (s.graphics === 'high' ? 1 : 0), (i) => (s.graphics = i ? 'high' : 'standard')),
+        { label: 'Privacy policy', action: () => window.open('privacy.html', '_blank', 'noopener') },
         { label: 'Back', primary: true, action: back },
       ],
       back,
@@ -650,6 +665,7 @@ export class Game {
 
   private showPause(): void {
     this.state = 'paused';
+    portal.gameplayStop();
     this.touch?.setVisible(false);
     this.sound.setMusic(true);
     if (this.current === 'online') {
@@ -679,6 +695,9 @@ export class Game {
   private showResults(r: MatchResult): void {
     if (this.state !== 'playing') return;
     this.state = 'results';
+    portal.gameplayStop();
+    // a match is a natural break: portals may show an ad here (offline matches are frozen on results)
+    if (!this.mode?.online) void portal.commercialBreak();
     this.touch?.setVisible(false);
     this.sound.setMusic(true);
     const youWon = r.humanTeam && r.winner === (r.youTeam ?? 0);
@@ -747,6 +766,7 @@ export class Game {
 
   private applySettings(): void {
     const s: Settings = this.settings;
+    this.sound.setMuted(portal.muted);
     saveSettings(s);
     this.cam.setPreset(s.camera);
     this.sound.setVolumes(s.sfxVolume, s.musicVolume);
