@@ -65,6 +65,8 @@ export class Player {
   swing: Swing | null = null;
   /** Game time of the last split step (a little hop as the opponent hits). */
   splitStepAt = -1;
+  /** Wall-clock ms (performance.now) when this player started celebrating a win. */
+  celebrateAt = -Infinity;
 
   constructor(
     readonly name: string,

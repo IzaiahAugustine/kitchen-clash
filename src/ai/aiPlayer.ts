@@ -12,14 +12,22 @@ export interface AiContext {
   ball: Ball;
   path: PathSample[];
   bouncesSinceHit: number;
-  /** The ball is live and coming to this player. */
+  /** The ball is live and coming to this player's team. */
   incoming: boolean;
-  opponent: Player;
+  /** One opponent in singles, two in doubles. */
+  opponents: Player[];
   /** Hits so far this rally (1 = the serve has been struck). */
   hitCount: number;
   /** The two-bounce rule applies to the next hit. */
   mustLetBounce: boolean;
-  isServer: boolean;
+  /** This player's team is serving this rally. */
+  servingTeam: boolean;
+  /** This player is the one receiving the serve. */
+  isReceiver: boolean;
+  /** Doubles: this ball is this player's to play (the partner has it otherwise). */
+  canPlay: boolean;
+  /** Doubles: the middle of this player's half of the court (x); singles: undefined. */
+  homeX?: number;
 }
 
 export interface AiSwing {
@@ -101,7 +109,8 @@ export class AiPlayer {
     if (ctx.time < this.reactUntil) return null; // still reading the shot: keep doing what it was doing
 
     // Chase the ball down even when it's a stretch; giving up early looks robotic.
-    const contact = ctx.incoming ? (this.findContact(ctx) ?? this.findContact(ctx, true)) : null;
+    const mine = ctx.incoming && ctx.canPlay;
+    const contact = mine ? (this.findContact(ctx) ?? this.findContact(ctx, true)) : null;
     if (!contact) {
       this.position(ctx);
       return null;
@@ -141,9 +150,10 @@ export class AiPlayer {
   /** Shot selection: the heart of the strategy. */
   private decide(c: Contact, ctx: AiContext): void {
     const p = this.player;
-    const opp = ctx.opponent;
+    const opps = ctx.opponents;
     const fromNet = Math.abs(c.pos.z);
-    const oppFromNet = Math.abs(opp.pos.z);
+    // Against a pair, judge by the one closest to the net (they'll take the soft balls).
+    const oppFromNet = Math.min(...opps.map((o) => Math.abs(o.pos.z)));
     const atKitchen = fromNet <= COURT.kitchenDepth + 3;
     const oppUp = oppFromNet <= COURT.kitchenDepth + 4;
     const oppBack = oppFromNet >= 15;
@@ -156,7 +166,7 @@ export class AiPlayer {
       // Return of serve: deep, to keep the server pinned back while it comes to the net.
       button = smart || Math.random() < 0.6 ? 'drive' : 'soft';
       depth = smart ? rand(0.4, 0.9) : rand(-0.6, 0.6);
-    } else if (ctx.hitCount === 2 && ctx.isServer && oppUp) {
+    } else if (ctx.hitCount === 2 && ctx.servingTeam && oppUp) {
       // Third shot against a returner at the net: the drop (sometimes a drive).
       button = smart ? (Math.random() < 0.8 ? 'soft' : 'drive') : Math.random() < 0.5 ? 'soft' : 'drive';
     } else if (atKitchen) {
@@ -185,11 +195,19 @@ export class AiPlayer {
       depth = rand(0, 0.8);
     }
 
-    // Aim away from the opponent (in this hitter's left/right terms), wider for better players.
-    const oppLateral = opp.pos.x * p.right.x;
-    const away = Math.abs(oppLateral) < 1 ? (Math.random() < 0.5 ? -1 : 1) : -Math.sign(oppLateral);
-    const wrongFoot = smart && Math.random() < 0.2 ? -1 : 1;
-    let x = away * wrongFoot * this.profile.angle * rand(0.6, 1);
+    let x: number;
+    if (opps.length > 1 && Math.random() < 0.55) {
+      // Doubles: "down the middle" between the two opponents causes confusion.
+      const mid = (opps[0].pos.x + opps[1].pos.x) / 2;
+      x = (mid * p.right.x) / 8;
+    } else {
+      // Aim away from the (nearest) opponent, in this hitter's left/right terms; wider for better players.
+      const opp = opps.reduce((a, b) => (Math.abs(a.pos.x - c.pos.x) < Math.abs(b.pos.x - c.pos.x) ? a : b));
+      const oppLateral = opp.pos.x * p.right.x;
+      const away = Math.abs(oppLateral) < 1 ? (Math.random() < 0.5 ? -1 : 1) : -Math.sign(oppLateral);
+      const wrongFoot = smart && Math.random() < 0.2 ? -1 : 1;
+      x = away * wrongFoot * this.profile.angle * rand(0.6, 1);
+    }
     x += gauss() * 0.15 * (1 - this.profile.shotIQ);
     this.button = button;
     this.kind = kind;
@@ -200,12 +218,18 @@ export class AiPlayer {
   private position(ctx: AiContext): void {
     const p = this.player;
     let depth: number;
-    if (ctx.isServer && ctx.hitCount <= 2) depth = BASELINE_SPOT; // stay back for the return
-    else if (!ctx.isServer && ctx.hitCount <= 1) depth = COURT.halfLength - 0.5; // waiting on the serve
-    else if (this.goingUp) depth = this.lazy ? TRANSITION_SPOT : KITCHEN_SPOT;
+    if (ctx.servingTeam && ctx.hitCount <= 2) depth = BASELINE_SPOT; // stay back for the return
+    else if (!ctx.servingTeam && ctx.hitCount <= 1) {
+      // Receiver waits deep for the serve; their partner starts at the kitchen line.
+      depth = ctx.isReceiver ? COURT.halfLength - 0.5 : KITCHEN_SPOT;
+    } else if (this.goingUp || (!ctx.servingTeam && !ctx.isReceiver)) depth = this.lazy ? TRANSITION_SPOT : KITCHEN_SPOT;
     else depth = Math.abs(p.pos.z) < TRANSITION_SPOT ? TRANSITION_SPOT : BASELINE_SPOT;
-    // Shade toward the side the ball is on, mirroring the opponent.
-    const x = clamp(ctx.opponent.pos.x * 0.35, -5, 5);
+    // Singles: shade toward the side the ball is on, mirroring the opponent.
+    // Doubles: hold your half of the court, shading a little toward the ball.
+    const x =
+      ctx.homeX !== undefined
+        ? clamp(ctx.homeX + ctx.ball.pos.x * 0.25, -9, 9)
+        : clamp(ctx.opponents[0].pos.x * 0.35, -5, 5);
     this.moveToward(new Vector3(x, 0, p.side * depth));
   }
 

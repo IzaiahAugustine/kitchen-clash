@@ -217,6 +217,17 @@ export class PlayerView {
     j.j_elbow_R.rotation.set(arm.ex, 0, 0);
     j.j_shoulder_L.rotation.set(0.35 + s * 0.6 * runAmt * runW, 0, player.swing ? -0.55 : -0.3 - 0.2 * shuffleW * moving);
     j.j_elbow_L.rotation.set(0.7 + 0.4 * runAmt, 0, 0);
+
+    // Won the game: bounce on the spot with both arms (and the paddle) up.
+    const party = (performance.now() - player.celebrateAt) / 1000;
+    if (party >= 0 && party < 3.5 && !player.swing) {
+      const bounce = Math.abs(Math.sin(party * 7));
+      this.root.position.y = bounce * 0.55;
+      j.j_shoulder_R.rotation.set(0, 0, 2.7 + bounce * 0.2);
+      j.j_shoulder_L.rotation.set(0, 0, -2.7 - bounce * 0.2);
+      j.j_elbow_R.rotation.set(0.2, 0, 0);
+      j.j_elbow_L.rotation.set(0.2, 0, 0);
+    }
   }
 }
 

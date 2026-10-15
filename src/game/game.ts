@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { PROFILES, parseDifficulty, type Difficulty } from '../ai/difficulty';
+import { parseDifficulty, type Difficulty } from '../ai/difficulty';
 import { Sound } from '../audio/sound';
 import { ArcadeCamera } from '../camera/arcadeCamera';
 import { BallLab } from '../debug/ballLab';
@@ -54,7 +54,11 @@ export class Game {
   private orbit: OrbitControls | null = null;
   private lastFlight = 0;
   /** What "Rematch" / "Restart" restarts. */
-  private current: { near: Controller; far: Difficulty } | 'practice' = { near: 'human', far: 'medium' };
+  private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' = {
+    near: 'human',
+    far: 'medium',
+    doubles: false,
+  };
 
   constructor(
     container: HTMLElement,
@@ -106,9 +110,9 @@ export class Game {
       this.startPractice();
     } else if (hasDebugFlag('watch') || hasDebugFlag('autoplay')) {
       const far = parseDifficulty(debugFlag('difficulty'));
-      this.startMatch(parseDifficulty(debugFlag('near'), far), far);
-    } else if (debugFlag('difficulty')) {
-      this.startMatch('human', parseDifficulty(debugFlag('difficulty')));
+      this.startMatch(parseDifficulty(debugFlag('near'), far), far, hasDebugFlag('doubles'));
+    } else if (debugFlag('difficulty') || hasDebugFlag('doubles')) {
+      this.startMatch('human', parseDifficulty(debugFlag('difficulty')), hasDebugFlag('doubles'));
     } else {
       this.showTitle();
     }
@@ -128,21 +132,24 @@ export class Game {
     this.world.ballView.clearTrail();
   }
 
-  private matchMode(near: Controller, far: Difficulty): MatchMode {
-    const label = (c: Controller) => (c === 'human' ? 'YOU' : `CPU ${PROFILES[c].label.toUpperCase()}`);
-    this.scoreboard.setNames([label(near), label(far)]);
+  private matchMode(near: Controller, far: Difficulty, doubles: boolean): MatchMode {
     const m = new MatchMode(this.world, this.template, this.scoreboard, {
-      scoring: { ...DEFAULT_SCORING, mode: debugFlag('scoring') === 'rally' ? 'rally' : this.settings.scoring },
+      scoring: {
+        ...DEFAULT_SCORING,
+        mode: debugFlag('scoring') === 'rally' ? 'rally' : this.settings.scoring,
+        teamSize: doubles ? 2 : 1,
+      },
       near,
       far,
     });
+    this.scoreboard.setNames(m.names);
     m.onGameOver = (r) => this.showResults(r);
     return m;
   }
 
-  private startMatch(near: Controller, far: Difficulty): void {
-    this.current = { near, far };
-    this.setMode(this.matchMode(near, far));
+  private startMatch(near: Controller, far: Difficulty, doubles = this.settings.format === 'doubles'): void {
+    this.current = { near, far, doubles };
+    this.setMode(this.matchMode(near, far, doubles));
     this.enterPlaying();
   }
 
@@ -154,7 +161,7 @@ export class Game {
 
   private restart(): void {
     if (this.current === 'practice') this.startPractice();
-    else this.startMatch(this.current.near, this.current.far);
+    else this.startMatch(this.current.near, this.current.far, this.current.doubles);
   }
 
   private enterPlaying(): void {
@@ -169,7 +176,7 @@ export class Game {
   /** Title screen, with a CPU match playing behind it. */
   private showTitle(): void {
     this.state = 'title';
-    this.setMode(this.matchMode('medium', 'hard'));
+    this.setMode(this.matchMode('medium', 'hard', this.settings.format === 'doubles'));
     this.world.hud.muted = true;
     this.scoreboard.setVisible(false);
     this.sound.setMusic(true);
@@ -180,6 +187,7 @@ export class Game {
       header: `<div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
         { label: '▶ Play vs AI', primary: true, action: () => this.startMatch('human', s.difficulty) },
+        this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
         this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
         { label: 'Watch AI vs AI', action: () => this.showWatchSetup() },
         { label: 'Practice', action: () => this.startPractice() },
@@ -194,8 +202,9 @@ export class Game {
       variant: 'title',
       header: '<div class="menu-headline">Watch AI vs AI</div><div class="menu-sub">F fast-forwards · Esc for the menu</div>',
       items: [
-        this.option('Orange player', LEVELS.map(cap), () => LEVELS.indexOf(s.watchNear), (i) => (s.watchNear = LEVELS[i])),
-        this.option('Purple player', LEVELS.map(cap), () => LEVELS.indexOf(s.watchFar), (i) => (s.watchFar = LEVELS[i])),
+        this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
+        this.option('Orange team', LEVELS.map(cap), () => LEVELS.indexOf(s.watchNear), (i) => (s.watchNear = LEVELS[i])),
+        this.option('Purple team', LEVELS.map(cap), () => LEVELS.indexOf(s.watchFar), (i) => (s.watchFar = LEVELS[i])),
         { label: '▶ Start', primary: true, action: () => this.startMatch(s.watchNear, s.watchFar) },
         { label: 'Back', action: () => this.showTitle() },
       ],
@@ -240,12 +249,12 @@ export class Game {
     if (this.state !== 'playing') return;
     this.state = 'results';
     this.sound.setMusic(true);
-    const youWon = r.names[r.winner] === 'YOU';
-    const headline = youWon ? 'YOU WIN!' : r.names[0] === 'YOU' ? 'SO CLOSE!' : `${r.names[r.winner]} WINS`;
+    const youWon = r.humanTeam && r.winner === 0;
+    const headline = youWon ? 'YOU WIN!' : r.humanTeam ? 'SO CLOSE!' : `${r.names[r.winner]} WINS`;
     const stats = [
       ['Rallies won', `${r.ralliesWon[0]}–${r.ralliesWon[1]}`],
       ['Longest rally', `${r.longestRally} shots`],
-      ...(r.names[0] === 'YOU' ? [['Perfect hits', String(r.perfects)]] : []),
+      ...(r.humanTeam ? [['Perfect hits', String(r.perfects)]] : []),
     ]
       .map(([k, v]) => `<div><b>${v}</b>${k}</div>`)
       .join('');

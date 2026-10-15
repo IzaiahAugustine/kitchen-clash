@@ -1,5 +1,5 @@
 // Headless match simulation: two AIs play full games under the real rules.
-// Usage: npx tsx tools/sim/match-sim.ts [games] [nearDifficulty] [farDifficulty] [sideout|rally]
+// Usage: npx tsx tools/sim/match-sim.ts [games] [nearDifficulty] [farDifficulty] [sideout|rally] [singles|doubles]
 import * as THREE from 'three';
 import { PROFILES, parseDifficulty } from '../../src/ai/difficulty';
 import { MatchMode } from '../../src/game/matchMode';
@@ -12,6 +12,7 @@ const games = Number(process.argv[2] ?? 5);
 const near = parseDifficulty(process.argv[3]);
 const far = parseDifficulty(process.argv[4]);
 const mode = process.argv[5] === 'rally' ? 'rally' : 'sideout';
+const teamSize = process.argv[6] === 'doubles' ? 2 : 1;
 // Optional profile tweaks for tuning, e.g. AI_TWEAK='{"hard":{"blunder":0.06}}'
 const tweak = JSON.parse(process.env.AI_TWEAK ?? '{}') as Record<string, object>;
 for (const [k, v] of Object.entries(tweak)) Object.assign(PROFILES[parseDifficulty(k)], v);
@@ -25,7 +26,7 @@ const world = {
   controls: { frame: { moveX: 0, moveY: 0, drive: false, soft: false, feed: false, pause: false } },
 } as unknown as World;
 
-const match = new MatchMode(world, null, null, { scoring: { ...DEFAULT_SCORING, mode }, near, far });
+const match = new MatchMode(world, null, null, { scoring: { ...DEFAULT_SCORING, mode, teamSize }, near, far });
 let time = 0;
 let acc = 0;
 const frame = 1 / 60;
@@ -61,7 +62,7 @@ for (let f = 0; f < 60 * 60 * 600 && done < games; f++) {
     }
   }
 }
-console.log(`${near} (near) vs ${far} (far), ${mode}: ${done} games, ${rallies} rallies, avg ${(time / Math.max(1, rallies)).toFixed(1)}s per rally`);
+console.log(`${teamSize === 2 ? 'DOUBLES ' : ''}${near} (near) vs ${far} (far), ${mode}: ${done} games, ${rallies} rallies, avg ${(time / Math.max(1, rallies)).toFixed(1)}s per rally`);
 console.log(`Wins: ${near} ${wins[0]} – ${wins[1]} ${far}   [${scores.join(', ')}]`);
 console.log(`Rallies won: ${near} ${((100 * ralliesLost[1]) / Math.max(1, rallies)).toFixed(0)}% – ${((100 * ralliesLost[0]) / Math.max(1, rallies)).toFixed(0)}% ${far}`);
 console.log('How rallies ended (who lost the rally):');

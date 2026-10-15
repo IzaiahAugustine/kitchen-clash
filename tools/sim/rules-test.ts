@@ -1,7 +1,7 @@
 // Unit tests for scoring and the referee. Usage: npx tsx tools/sim/rules-test.ts
 import { Referee, inServiceBox } from '../../src/rules/referee';
 import { DEFAULT_SCORING, Score, type Team } from '../../src/rules/scoring';
-import { serveSetup } from '../../src/rules/serve';
+import { ServeRotation, serveSetup } from '../../src/rules/serve';
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown) {
@@ -90,6 +90,34 @@ function check(name: string, actual: unknown, expected: unknown) {
   check('second bounce: receiver missed', r.onBounce(-6, -20), { side: -1, reason: 'double-bounce' });
   r.startRally(1, -1);
   check('serve into the net', r.onNet()?.reason, 'serve-net');
+}
+// --- doubles serving rotation
+{
+  const score = new Score({ ...DEFAULT_SCORING, teamSize: 2 }, 0);
+  const rot = new ServeRotation(score);
+  const state = () => `${score.call()} server ${rot.server.team}/${rot.server.seat} from ${rot.serverCourt} → receiver ${rot.receiver.team}/${rot.receiver.seat}`;
+  const play = (winner: Team) => {
+    const before = score.servingTeam;
+    rot.afterRally(before, score.rallyWonBy(winner));
+  };
+  check('start: 0-0-2, seat 0 serves from the right to their diagonal', state(), '0-0-2 server 0/0 from right → receiver 1/0');
+  play(0);
+  check('server scores: partners swap, same server now from the left', state(), '1-0-2 server 0/0 from left → receiver 1/1');
+  play(1);
+  check('first-server exception: straight to side out, right-court player serves', state(), '0-1-1 server 1/0 from right → receiver 0/1');
+  play(0);
+  check('lose on first serve: partner becomes second server', state(), '0-1-2 server 1/1 from left → receiver 0/0');
+  play(1);
+  check('second server scores: team swaps, same server', state(), '1-1-2 server 1/1 from right → receiver 0/1');
+  play(0);
+  check('lose on second serve: side out to the right-court player', state(), '1-1-1 server 0/1 from right → receiver 1/1');
+  check('receiving team never moved', [rot.courtOf(1, 0), rot.courtOf(1, 1)], ['left', 'right']);
+}
+{
+  const score = new Score({ ...DEFAULT_SCORING, teamSize: 2, mode: 'rally' }, 0);
+  const rot = new ServeRotation(score);
+  rot.afterRally(0, score.rallyWonBy(1));
+  check('rally doubles: winner serves from the court matching their (odd) score', [score.call(), rot.serverCourt], ['1-0', 'left']);
 }
 console.log(failed ? `\n${failed} FAILED` : '\nAll rules tests passed');
 process.exit(failed ? 1 : 0);

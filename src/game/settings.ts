@@ -5,6 +5,8 @@ export type CameraPreset = 'close' | 'classic' | 'wide';
 
 export interface Settings {
   difficulty: Difficulty;
+  /** Singles (1v1) or doubles (2v2, you + an AI partner). */
+  format: 'singles' | 'doubles';
   /** Watch mode: near and far AI levels. */
   watchNear: Difficulty;
   watchFar: Difficulty;
@@ -19,6 +21,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   difficulty: 'medium',
+  format: 'singles',
   watchNear: 'medium',
   watchFar: 'hard',
   scoring: 'sideout',
