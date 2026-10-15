@@ -81,6 +81,11 @@ export class PracticeMode implements GameMode {
       : [];
   }
 
+  dispose(): void {
+    for (const [, v] of this.views) this.w.scene.remove(v.root);
+    this.markers.dispose();
+  }
+
   update(dt: number, time: number): void {
     const { ball, controls } = this.w;
     const input = controls.frame;

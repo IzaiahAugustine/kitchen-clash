@@ -74,6 +74,11 @@ export class Crowd {
     this.update(0, 0);
   }
 
+  /** Make the crowd jump and cheer (0..1). */
+  cheer(level: number): void {
+    this.excitement = Math.max(this.excitement, level);
+  }
+
   update(time: number, dt: number): void {
     this.excitement = Math.max(0, this.excitement - dt * 0.5);
     this.fans.forEach((f, i) => {

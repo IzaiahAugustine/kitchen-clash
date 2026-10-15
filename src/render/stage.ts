@@ -20,6 +20,7 @@ export class Stage {
   readonly sun: THREE.DirectionalLight;
   private composer: EffectComposer | null = null;
   private ao: GTAOPass | null = null;
+  private camera: THREE.Camera | null = null;
   private pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
   private frameTimes: number[] = [];
   private lastAdjust = 0;
@@ -63,7 +64,20 @@ export class Stage {
 
   /** Call once the camera exists. */
   setupPost(camera: THREE.Camera): void {
-    if (!hasDebugFlag('hifx')) return;
+    this.camera = camera;
+    this.setHighQuality(hasDebugFlag('hifx'));
+  }
+
+  /** High quality adds ambient occlusion (soft contact shadows); needs a strong GPU. */
+  setHighQuality(on: boolean): void {
+    if (!on || !this.camera) {
+      this.composer?.dispose();
+      this.composer = null;
+      this.ao = null;
+      return;
+    }
+    if (this.composer) return;
+    const camera = this.camera;
     const w = window.innerWidth;
     const h = window.innerHeight;
     const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });

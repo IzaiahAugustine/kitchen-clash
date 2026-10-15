@@ -3,16 +3,16 @@ import type { Score, Team } from '../rules/scoring';
 /** Top-center scoreboard: both scores, who's serving, and the pickleball score call. */
 export class Scoreboard {
   private el: HTMLDivElement;
-  private overlay: HTMLDivElement;
   private last = '';
 
-  constructor(root: HTMLElement, private names: [string, string], private colors: [string, string]) {
+  constructor(
+    root: HTMLElement,
+    private names: [string, string],
+    private colors: [string, string],
+  ) {
     this.el = document.createElement('div');
     this.el.className = 'scoreboard';
-    this.overlay = document.createElement('div');
-    this.overlay.className = 'overlay';
-    this.overlay.style.display = 'none';
-    root.append(this.el, this.overlay);
+    root.append(this.el);
   }
 
   update(score: Score): void {
@@ -28,12 +28,12 @@ export class Scoreboard {
     }
   }
 
-  showGameOver(title: string, line: string): void {
-    this.overlay.innerHTML = `<div class="card"><h1>${title}</h1><p>${line}</p><p>Press <b>Enter</b> for a rematch</p></div>`;
-    this.overlay.style.display = 'grid';
+  setVisible(on: boolean): void {
+    this.el.classList.toggle('hidden', !on);
   }
 
-  hideGameOver(): void {
-    this.overlay.style.display = 'none';
+  setNames(names: [string, string]): void {
+    this.names = names;
+    this.last = '';
   }
 }

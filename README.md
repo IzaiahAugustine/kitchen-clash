@@ -28,11 +28,19 @@ npm run dev        # opens http://localhost:5173
 | `src/players` | Player movement, Blender model + procedural animation, swings, shot selection, timing |
 | `src/ai` | AI opponent: difficulty profiles and strategy (plus the simple practice bot) |
 | `src/rules` | Scoring (side-out / rally), referee (faults, two-bounce, kitchen), serve setup |
-| `src/ui` | HUD and pop-up messages |
+| `src/ui` | Menus, HUD, scoreboard, pop-up messages |
+| `src/audio` | Sound effects and music (files with synthesized fallbacks) |
 | `src/debug` | Ball Lab test harness |
 | `tools/blender` | Python scripts that build the `.glb` models in Blender |
 
+## Sounds and art
+
+Put sound files in `public/audio/` (see the README there for names); the game falls back to
+synthesized sounds for anything missing. Title art goes in `public/art/title.(jpg|png|webp)`.
+
 ## URL options
+
+These skip the title screen (handy for testing):
 
 - `?difficulty=easy|medium|hard`: opponent level (default medium)
 - `?watch`: AI vs AI; `?near=easy|medium|hard` sets the near player's level (F = fast-forward)

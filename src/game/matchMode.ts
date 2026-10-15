@@ -57,6 +57,19 @@ export interface MatchOptions {
 
 export const DEFAULT_MATCH: MatchOptions = { scoring: DEFAULT_SCORING, near: 'human', far: 'medium' };
 
+export interface MatchResult {
+  /** Team 0 (near) or 1 (far). */
+  winner: Team;
+  names: [string, string];
+  points: [number, number];
+  /** Longest rally, in shots. */
+  longestRally: number;
+  /** Your Perfect-timed shots (0 in AI vs AI). */
+  perfects: number;
+  /** Rallies won by each team. */
+  ralliesWon: [number, number];
+}
+
 interface Side {
   player: Player;
   name: string;
@@ -83,6 +96,11 @@ export class MatchMode implements GameMode {
   private bouncesSinceHit = 0;
   private lastShot = '—';
   private log: string[] = [];
+  private longestRally = 0;
+  private perfects = 0;
+  private ralliesWon: [number, number] = [0, 0];
+  /** Called when a game with a human player ends (AI vs AI just starts a new game). */
+  onGameOver: ((r: MatchResult) => void) | null = null;
 
   constructor(
     private w: World,
@@ -137,10 +155,18 @@ export class MatchMode implements GameMode {
     return this.sides[this.score.receivingTeam];
   }
 
-  private newGame(): void {
+  /** Start a fresh game (also used for rematches). */
+  newGame(): void {
     this.score = new Score(this.opts.scoring, Math.random() < 0.5 ? 0 : 1);
-    this.scoreboard?.hideGameOver();
+    this.longestRally = 0;
+    this.perfects = 0;
+    this.ralliesWon = [0, 0];
     this.setupServe();
+  }
+
+  dispose(): void {
+    for (const [, v] of this.views) this.w.scene.remove(v.root);
+    this.markers.dispose();
   }
 
   /** Line both players up for the next serve and call the score. */
@@ -191,13 +217,12 @@ export class MatchMode implements GameMode {
   }
 
   update(dt: number, time: number): void {
-    const { ball, controls } = this.w;
-    const input = controls.frame;
+    const { ball } = this.w;
     this.path = predictPath(ball);
 
     if (this.phase === 'gameOver') {
       this.phaseTimer -= dt;
-      if (input.feed || (this.watching && this.phaseTimer <= 0)) this.newGame();
+      if (this.watching && this.phaseTimer <= 0) this.newGame();
     } else if (this.phase === 'pointOver') {
       this.phaseTimer -= dt;
       if (this.phaseTimer <= 0) this.setupServe();
@@ -349,11 +374,7 @@ export class MatchMode implements GameMode {
         <div><b>F</b> Fast-forward · <b>T</b> Slow-mo</div>`;
     }
     const yourServe = this.phase === 'preServe' && this.server.human;
-    const hint = yourServe
-      ? '<div class="big ok">Your serve! J = hard serve · K = safe serve (aim with A/D)</div>'
-      : this.phase === 'gameOver'
-        ? '<div class="big">Press Enter for a rematch</div>'
-        : '';
+    const hint = yourServe ? '<div class="big ok">Your serve! J = hard serve · K = safe serve (aim with A/D)</div>' : '';
     return `
       <div class="title">Kitchen Clash <small>vs ${this.sides[1].name}</small></div>
       <div><b>WASD</b> move + <b>J</b> <b>K</b> hit &nbsp;·&nbsp; or <b>Arrows</b> move + <b>Z</b> <b>X</b> hit</div>
@@ -374,6 +395,7 @@ export class MatchMode implements GameMode {
   private onGoodHit(s: Side, report: ShotReport): void {
     if (!s.human) return;
     const g = GRADE_TEXT[report.timing.grade];
+    if (report.timing.grade === 'perfect') this.perfects++;
     if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.flash(g.text, g.kind, 800);
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }
@@ -385,6 +407,13 @@ export class MatchMode implements GameMode {
     this.phaseTimer = BETWEEN_POINTS;
     const loser: Team = teamOfSide(fault.side);
     const winner = otherTeam(loser);
+    const shots = this.referee.hitCount;
+    this.longestRally = Math.max(this.longestRally, shots);
+    this.ralliesWon[winner]++;
+    // The crowd reacts more to long rallies and to your points.
+    const excitement = Math.min(1, 0.35 + shots / 14 + (this.sides[winner].human ? 0.3 : 0));
+    this.w.crowd?.cheer(excitement);
+    this.w.audio?.play('cheer', { volume: 0.25 + 0.55 * excitement });
     const servingBefore = this.score.servingTeam;
     const outcome = this.score.rallyWonBy(winner);
     const text = FAULT_TEXT[fault.reason];
@@ -406,9 +435,21 @@ export class MatchMode implements GameMode {
       this.phase = 'gameOver';
       this.phaseTimer = 4;
       const [a, b] = [this.score.points[w], this.score.points[otherTeam(w)]];
-      const title = this.sides[w].human ? 'YOU WIN!' : `${this.sides[w].name} WINS`;
-      this.scoreboard?.showGameOver(title, `${a} – ${b}`);
       this.log.push(`game:${w}:${a}-${b}`);
+      this.w.crowd?.cheer(1);
+      if (this.watching) {
+        setTimeout(() => this.w.hud.flash(`${this.sides[w].name} WINS`, 'good', 2500, `${a} – ${b}`), 1200);
+      } else {
+        const result: MatchResult = {
+          winner: w,
+          names: this.names,
+          points: [this.score.points[0], this.score.points[1]],
+          longestRally: this.longestRally,
+          perfects: this.perfects,
+          ralliesWon: [...this.ralliesWon] as [number, number],
+        };
+        setTimeout(() => this.onGameOver?.(result), 1500);
+      }
     } else if (this.score.gamePointFor() !== null) {
       setTimeout(() => this.w.hud.flash('GAME POINT', 'info', 1200), 1000);
     }

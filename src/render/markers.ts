@@ -25,6 +25,14 @@ export class BounceMarkers {
     this.markers.push({ mesh, age: 0 });
   }
 
+  dispose(): void {
+    for (const m of this.markers) {
+      this.scene.remove(m.mesh);
+      (m.mesh.material as THREE.Material).dispose();
+    }
+    this.markers = [];
+  }
+
   update(dt: number): void {
     for (let i = this.markers.length - 1; i >= 0; i--) {
       const m = this.markers[i];

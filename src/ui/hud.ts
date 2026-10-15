@@ -5,6 +5,8 @@ export class Hud {
   private panel: HTMLDivElement;
   private toasts: HTMLDivElement;
   private lastPanel = '';
+  /** While true (title screen), nothing is shown. */
+  muted = false;
 
   constructor(root: HTMLElement) {
     this.panel = document.createElement('div');
@@ -15,6 +17,7 @@ export class Hud {
   }
 
   setPanel(html: string): void {
+    this.panel.classList.toggle('hidden', this.muted);
     if (html === this.lastPanel) return;
     this.lastPanel = html;
     this.panel.innerHTML = html;
@@ -22,6 +25,7 @@ export class Hud {
 
   /** Big pop-up message, with an optional smaller explanation line under it. */
   flash(text: string, kind: FlashKind = 'info', ms = 1100, detail?: string): void {
+    if (this.muted) return;
     const el = document.createElement('div');
     el.className = `toast toast-${kind}`;
     el.textContent = text;
