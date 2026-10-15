@@ -3,10 +3,18 @@ import { PracticeBot } from '../ai/practiceBot';
 import type { BallEvent } from '../physics/ball';
 import { predictPath, type PathSample } from '../physics/predict';
 import { strikeGeometry } from '../players/body';
-import { MAX_EARLY_LEAD, beginSwing, executeShot, findContact, type ShotReport } from '../players/hitting';
+import {
+  MAX_EARLY_LEAD,
+  beginSwing,
+  executeShot,
+  findContact,
+  reachAtContact,
+  stretchTiming,
+  type ShotReport,
+} from '../players/hitting';
 import { HumanController } from '../players/humanController';
 import { PALETTES } from '../players/palette';
-import { Player } from '../players/player';
+import { LUNGE_REACH, Player } from '../players/player';
 import { PlayerView } from '../players/playerView';
 import { SHOT_NAMES, type ShotKind } from '../players/shots';
 import { BounceMarkers } from '../render/markers';
@@ -14,8 +22,8 @@ import { isInCourt, sideOf } from './court';
 import { hasDebugFlag } from './debugFlags';
 import type { GameMode, World } from './mode';
 
-/** How far (ft/s) a human can lunge toward the ball once they commit to a swing. */
-const HUMAN_LUNGE_RATE = 11;
+/** Extra reach (ft) the human gets when planning a hit: a lunge plus a little forgiveness. */
+const HUMAN_REACH = 2.6;
 
 const GRADE_TEXT = {
   perfect: { text: 'Perfect!', kind: 'good' },
@@ -82,7 +90,7 @@ export class PracticeMode implements GameMode {
     const humanIncoming = this.live && this.lastHitter !== this.human;
     const preview =
       humanIncoming && !this.human.swing
-        ? findContact(this.human, this.query(1.6, 9, 1.0), ball.flight)
+        ? findContact(this.human, this.query(1.6, HUMAN_REACH), ball.flight)
         : null;
     const button = this.humanCtl.update(input, preview);
     if (this.autopilot) {
@@ -98,7 +106,7 @@ export class PracticeMode implements GameMode {
       if (b && this.human.canSwing(time)) this.human.swing = beginSwing(b, time, this.autopilot.query(actx));
     } else if (button && this.human.canSwing(time)) {
       const contact = humanIncoming
-        ? findContact(this.human, this.query(MAX_EARLY_LEAD + 0.3, HUMAN_LUNGE_RATE, 1.2), ball.flight)
+        ? findContact(this.human, this.query(MAX_EARLY_LEAD + 0.3, HUMAN_REACH), ball.flight)
         : null;
       const swing = beginSwing(button, time, contact);
       this.human.swing = swing;
@@ -121,7 +129,7 @@ export class PracticeMode implements GameMode {
       if (this.nextFeedIn <= 0) this.feed(time);
     }
 
-    for (const [p, v] of this.views) v.update(p, time, dt);
+    for (const [p, v] of this.views) v.update(p, time, dt, ball.pos);
     this.markers.update(dt);
   }
 
@@ -134,8 +142,19 @@ export class PracticeMode implements GameMode {
       sw.resolved = true;
       const canHit = sw.feed || (this.live && ball.inPlay && ball.flight === sw.contact.flight && this.lastHitter !== p);
       if (!canHit) continue;
+      if (!sw.feed) {
+        const reach = reachAtContact(p);
+        if (reach === 'miss') {
+          if (p === this.human) this.w.hud.flash('Too far!', 'bad', 800);
+          continue;
+        }
+        if (reach === 'stretch' && sw.timing) {
+          sw.timing = stretchTiming(sw.timing);
+          if (p === this.human) this.w.hud.flash('Stretch!', 'bad', 700);
+        }
+      }
       const aim = p === this.bot ? this.botAi.aim : (this.autopilot?.aim ?? this.humanCtl.aim);
-      this.onHit(p, executeShot(ball, p, sw, aim), !!sw.feed);
+      this.onHit(p, executeShot(ball, p, sw, aim), !!sw.feed, time);
     }
   }
 
@@ -162,9 +181,9 @@ export class PracticeMode implements GameMode {
     const pad = this.w.controls.pad;
     return `
       <div class="title">Kitchen Clash <small>Practice · Phase 2</small></div>
-      <div><b>WASD / Arrows / Left stick</b> Move &amp; aim</div>
-      <div><b>J / Z / Space</b> (A) Drive · dink at the kitchen · smash high balls</div>
-      <div><b>K / X</b> (X/B) Soft · drop from the back · reset midcourt · lob at the kitchen</div>
+      <div><b>WASD</b> move + <b>J</b> <b>K</b> hit &nbsp;·&nbsp; or <b>Arrows</b> move + <b>Z</b> <b>X</b> hit &nbsp;·&nbsp; 🎮 stick + <b>A</b> <b>X</b></div>
+      <div><b>J / Z</b> (🎮 A) Drive · dink at the kitchen · smash high balls</div>
+      <div><b>K / X</b> (🎮 X/B) Soft · drop from the back · reset midcourt · lob at the kitchen</div>
       <div><b>Enter</b> (Y) Feed now</div>
       <hr/>
       <div class="big">Rally ${this.rally} <span class="dim">· Best ${this.best}</span></div>
@@ -176,12 +195,14 @@ export class PracticeMode implements GameMode {
     return this.human.pos.x;
   }
 
-  private query(maxTime: number, moveRate: number, slack: number) {
-    return { path: this.path, bouncesSoFar: this.bouncesSinceHit, maxTime, moveRate, slack };
+  private query(maxTime: number, slack: number) {
+    return { path: this.path, bouncesSoFar: this.bouncesSinceHit, maxTime, slack };
   }
 
-  private onHit(p: Player, report: ShotReport, feed: boolean): void {
+  private onHit(p: Player, report: ShotReport, feed: boolean, time: number): void {
     this.lastHitter = p;
+    // The other player split-steps as the ball is struck.
+    for (const other of [this.human, this.bot]) if (other !== p) other.splitStepAt = time;
     this.bouncesSinceHit = 0;
     this.live = true;
     if (!feed) this.rally++;
@@ -191,7 +212,7 @@ export class PracticeMode implements GameMode {
       return;
     }
     const g = GRADE_TEXT[report.timing.grade];
-    this.w.hud.flash(g.text, g.kind, 800);
+    if (!this.human.swing || this.human.contactGap() <= LUNGE_REACH) this.w.hud.flash(g.text, g.kind, 800);
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }
 

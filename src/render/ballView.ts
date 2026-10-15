@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Ball } from '../physics/ball';
 import { PHYS } from '../physics/constants';
-import { addOutline, toonMaterial } from './toon';
+import { addOutline, surfaceMaterial } from './materials';
 
 /** Drawn bigger than the real ball so it reads clearly from the arcade camera. Physics is unaffected. */
 const VISUAL_SCALE = 1.8;
@@ -17,8 +17,8 @@ export class BallView {
 
   constructor(scene: THREE.Scene) {
     const r = PHYS.ballRadius * VISUAL_SCALE;
-    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 18), toonMaterial(0xffffff, { map: ballTexture() }));
-    addOutline(this.mesh, 0.003);
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 18), surfaceMaterial(0xffffff, { map: ballTexture(), roughness: 0.45 }));
+    addOutline(this.mesh, 0.002);
 
     // Blob shadow straight below the ball: the most important depth cue from a high camera.
     this.shadow = new THREE.Mesh(

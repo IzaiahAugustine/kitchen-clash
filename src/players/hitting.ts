@@ -3,7 +3,7 @@ import type { Ball } from '../physics/ball';
 import type { PathSample } from '../physics/predict';
 import { solveShot } from '../physics/trajectory';
 import { BODY, strikeGeometry, type Hand } from './body';
-import type { Contact, Player, Swing } from './player';
+import { LUNGE_REACH, STRETCH_REACH, type Contact, type Player, type Swing } from './player';
 import { chooseShotKind, planShot, type Aim, type ShotButton, type ShotKind, type Timing } from './shots';
 import { buildSwingPoses, styleFor } from './swingPoses';
 
@@ -27,10 +27,10 @@ export interface ContactQuery {
   /** Bounces since the ball was last hit. */
   bouncesSoFar: number;
   maxTime: number;
-  /** How fast (ft/s) the player can cover ground to get to the ball. */
-  moveRate: number;
-  /** Free reach (ft) before any movement is needed. */
+  /** Reach (ft) on top of running: how far from the ideal spot a hit still works. */
   slack: number;
+  /** Seconds before the player starts moving (reaction time). */
+  reaction?: number;
   /** Ball must bounce first (two-bounce rule). */
   mustBounce?: boolean;
 }
@@ -59,8 +59,10 @@ export function findContact(player: Player, q: ContactQuery, flight: number): Co
     const g = strikeGeometry(s.y, hand);
     const sx = s.x - player.right.x * g.lateral;
     const sz = s.z - player.forward.z * g.forward;
-    const need = Math.hypot(sx - player.pos.x, sz - player.pos.z);
-    if (need > q.slack + q.moveRate * s.t) continue;
+    const dx = sx - player.pos.x;
+    const dz = sz - player.pos.z;
+    const need = Math.hypot(dx, dz);
+    if (need > q.slack + player.coverable(s.t - (q.reaction ?? 0), dx, dz)) continue;
     if (crossed) return makeContact(player, s, flight, totalBounces > 0);
     fallback = s;
     fallbackBounced = totalBounces > 0;
@@ -136,6 +138,21 @@ export function beginSwing(
     resolved: false,
     feed: opts.feed,
   };
+}
+
+/**
+ * At contact: is the player close enough to the ideal spot? Within a lunge is fine, a bit
+ * farther is a weak stretched shot, beyond that the ball gets past them.
+ */
+export function reachAtContact(player: Player): 'ok' | 'stretch' | 'miss' {
+  const gap = player.contactGap();
+  if (gap <= LUNGE_REACH) return 'ok';
+  return gap <= STRETCH_REACH ? 'stretch' : 'miss';
+}
+
+/** A stretched shot plays like a mistimed one: less pace, sprays wide. */
+export function stretchTiming(t: Timing): Timing {
+  return { grade: t.grade === 'early' ? 'early' : 'late', error: Math.max(t.error, 0.16) };
 }
 
 export interface ShotReport {

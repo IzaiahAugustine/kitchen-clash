@@ -3,7 +3,7 @@ import type { Side } from '../game/court';
 import type { Hand } from './body';
 import type { Palette } from './palette';
 import type { ShotButton, ShotKind, Timing } from './shots';
-import type { SwingPoses } from './swingPoses';
+import { buildSwingPoses, styleFor, type SwingPoses } from './swingPoses';
 
 /** A planned ball contact: when and where the paddle will meet the ball. */
 export interface Contact {
@@ -38,9 +38,15 @@ export interface Swing {
   feed?: boolean;
 }
 
-const ACCEL = 90;
-const MAGNET_MAX_SPEED = 22;
+/** Speeding up: a quick first step, but you can't hit top speed instantly. */
+const ACCEL = 32;
+/** Slowing down or changing direction: plant a foot and push off. */
+const BRAKE = 55;
 export const RECOVER_TIME = 0.25;
+/** At contact the player can lunge/reach this far from the ideal hitting spot. */
+export const LUNGE_REACH = 2.2;
+/** Farther than the lunge still gets a weak, stretched shot up to here; beyond it's a miss. */
+export const STRETCH_REACH = 3.6;
 
 export class Player {
   readonly pos = new Vector3();
@@ -52,8 +58,11 @@ export class Player {
   /** Unit vector to the player's right. */
   readonly right: Vector3;
   readonly yaw: number;
-  maxSpeed = 15;
+  /** Top sprint speed (ft/s). Side-shuffling and backpedaling are slower (see speedFactor). */
+  maxSpeed = 14;
   swing: Swing | null = null;
+  /** Game time of the last split step (a little hop as the opponent hits). */
+  splitStepAt = -1;
 
   constructor(
     readonly name: string,
@@ -69,42 +78,71 @@ export class Player {
     return !this.swing || time >= this.swing.endAt;
   }
 
+  /** Top-speed multiplier for moving in a direction: sprint forward 1, shuffle sideways 0.82, backpedal 0.62. */
+  speedFactor(dx: number, dz: number): number {
+    const m = Math.hypot(dx, dz);
+    if (m < 1e-6) return 1;
+    const f = (dx * this.forward.x + dz * this.forward.z) / m;
+    return f >= 0 ? 0.82 + 0.18 * f : 0.82 - 0.2 * -f;
+  }
+
+  /** How far the player can run in `t` seconds in direction (dx, dz), starting from a standstill. */
+  coverable(t: number, dx: number, dz: number): number {
+    if (t <= 0) return 0;
+    const v = this.maxSpeed * this.speedFactor(dx, dz);
+    const tAccel = v / ACCEL;
+    return t <= tAccel ? 0.5 * ACCEL * t * t : v * (t - tAccel / 2);
+  }
+
+  /** Distance from where the player is to where they need to be for the swing's contact. */
+  contactGap(): number {
+    const c = this.swing?.contact;
+    return c ? Math.hypot(c.standAt.x - this.pos.x, c.standAt.z - this.pos.z) : 0;
+  }
+
   step(dt: number, time: number): void {
     const sw = this.swing;
     if (sw && time > sw.endAt + RECOVER_TIME) this.swing = null;
 
+    let tx: number;
+    let tz: number;
+    let slow = 1;
     if (sw && sw.contact && !sw.resolved) {
-      // Committed to a shot: glide into the hitting position so the paddle meets the ball.
-      const remain = Math.max(sw.contactAt - time, dt);
-      let vx = (sw.contact.standAt.x - this.pos.x) / remain;
-      let vz = (sw.contact.standAt.z - this.pos.z) / remain;
-      const m = Math.hypot(vx, vz);
-      if (m > MAGNET_MAX_SPEED) {
-        vx *= MAGNET_MAX_SPEED / m;
-        vz *= MAGNET_MAX_SPEED / m;
-      }
-      this.vel.set(vx, 0, vz);
+      // Committed to a shot: run to the hitting spot, timing the arrival for contact.
+      const dx = sw.contact.standAt.x - this.pos.x;
+      const dz = sw.contact.standAt.z - this.pos.z;
+      const d = Math.hypot(dx, dz);
+      const remain = Math.max(sw.contactAt - time, 0.05);
+      const speed = d < 0.05 ? 0 : Math.max(d / remain, Math.min(d * 3, this.maxSpeed));
+      tx = d < 0.05 ? 0 : (dx / d) * speed;
+      tz = d < 0.05 ? 0 : (dz / d) * speed;
     } else {
-      const slow = sw ? 0.35 : 1;
-      let tx = this.intent.x * slow;
-      let tz = this.intent.z * slow;
-      const tm = Math.hypot(tx, tz);
-      const max = this.maxSpeed * slow;
-      if (tm > max) {
-        tx *= max / tm;
-        tz *= max / tm;
-      }
-      let dx = tx - this.vel.x;
-      let dz = tz - this.vel.z;
-      const dm = Math.hypot(dx, dz);
-      const maxDv = ACCEL * dt;
-      if (dm > maxDv) {
-        dx *= maxDv / dm;
-        dz *= maxDv / dm;
-      }
-      this.vel.x += dx;
-      this.vel.z += dz;
+      // Recovering from a follow-through slows you down.
+      slow = sw ? 0.45 : 1;
+      tx = this.intent.x * slow;
+      tz = this.intent.z * slow;
     }
+
+    const max = this.maxSpeed * this.speedFactor(tx, tz) * slow;
+    const tm = Math.hypot(tx, tz);
+    if (tm > max) {
+      tx *= max / tm;
+      tz *= max / tm;
+    }
+    // Accelerate gently, brake and cut hard.
+    const vx = this.vel.x;
+    const vz = this.vel.z;
+    const speeding = tx * vx + tz * vz >= 0 && Math.hypot(tx, tz) >= Math.hypot(vx, vz);
+    let dx = tx - vx;
+    let dz = tz - vz;
+    const dm = Math.hypot(dx, dz);
+    const maxDv = (speeding ? ACCEL : BRAKE) * dt;
+    if (dm > maxDv) {
+      dx *= maxDv / dm;
+      dz *= maxDv / dm;
+    }
+    this.vel.x += dx;
+    this.vel.z += dz;
 
     this.pos.addScaledVector(this.vel, dt);
     // Stay on your own side of the net and inside the fence.
@@ -118,6 +156,19 @@ export class Player {
     if (Math.abs(this.pos.x) > 15.5) {
       this.pos.x = Math.sign(this.pos.x) * 15.5;
       this.vel.x = 0;
+    }
+
+    // Re-aim the swing from where the player actually is, so the arm reaches for the real ball.
+    if (sw && sw.contact && !sw.resolved) {
+      const c = sw.contact.pos;
+      const dx = c.x - this.pos.x;
+      const dz = c.z - this.pos.z;
+      const local = new Vector3(
+        dx * this.right.x + dz * this.right.z,
+        c.y,
+        -(dx * this.forward.x + dz * this.forward.z),
+      );
+      sw.poses = buildSwingPoses(styleFor(sw.kind), sw.hand, local, sw.contact.crouch);
     }
   }
 }

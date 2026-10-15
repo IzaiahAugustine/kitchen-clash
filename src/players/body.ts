@@ -3,15 +3,17 @@
  * plus the geometry of where the ball sits relative to the body at contact.
  */
 export const BODY = {
-  hipsY: 2.35,
-  shoulderX: 0.78,
-  shoulderY: 3.9,
-  thigh: 1.1,
-  shin: 1.0,
+  hipsY: 3.05,
+  shoulderX: 0.6,
+  shoulderY: 4.65,
+  thigh: 1.35,
+  shin: 1.45,
+  /** Head center height when standing (for looking at the ball). */
+  headY: 5.3,
   /** Shoulder to the paddle's sweet spot with a nearly straight arm. */
-  armReach: 2.35,
+  armReach: 2.55,
   /** Contact happens this far in front of the body. */
-  contactForward: 0.9,
+  contactForward: 1.0,
 } as const;
 
 export type Hand = 'fore' | 'back';
@@ -28,7 +30,7 @@ export function legPose(crouch: number): { hip: number; knee: number; drop: numb
 
 /** Low balls need a deeper crouch. */
 export function crouchForHeight(height: number): number {
-  return clamp((3.3 - height) / 2.2, 0.08, 0.85);
+  return clamp((3.8 - height) / 2.6, 0.08, 0.9);
 }
 
 /**

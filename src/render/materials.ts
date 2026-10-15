@@ -1,29 +1,18 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-/** Cartoon look: banded cel shading plus inverted-hull outlines. */
+/**
+ * Stylized look: clean, mostly matte physically-based surfaces lit by the sun and sky,
+ * with thin ink outlines to keep shapes crisp from the high camera.
+ */
 
 export const OUTLINE_COLOR = 0x1b1530;
 
-let gradient: THREE.DataTexture | null = null;
-
-/** Three light bands: shadow, mid, lit. */
-export function toonGradient(): THREE.DataTexture {
-  if (!gradient) {
-    const data = new Uint8Array([120, 200, 255]);
-    gradient = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
-    gradient.minFilter = THREE.NearestFilter;
-    gradient.magFilter = THREE.NearestFilter;
-    gradient.needsUpdate = true;
-  }
-  return gradient;
-}
-
-export function toonMaterial(
+export function surfaceMaterial(
   color: THREE.ColorRepresentation,
-  params: THREE.MeshToonMaterialParameters = {},
-): THREE.MeshToonMaterial {
-  return new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), ...params });
+  params: THREE.MeshStandardMaterialParameters = {},
+): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...params });
 }
 
 const outlineMaterials = new Map<number, THREE.MeshBasicMaterial>();
@@ -32,7 +21,7 @@ const outlineMaterials = new Map<number, THREE.MeshBasicMaterial>();
  * Back-face hull pushed out along the normal. The push scales with view depth so the line
  * stays roughly the same pixel width near and far. Works for skinned meshes too.
  */
-export function outlineMaterial(thickness = 0.0025): THREE.MeshBasicMaterial {
+export function outlineMaterial(thickness = 0.0015): THREE.MeshBasicMaterial {
   const cached = outlineMaterials.get(thickness);
   if (cached) return cached;
   const m = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide });

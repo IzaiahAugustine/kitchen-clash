@@ -36,7 +36,7 @@ export class PracticeBot {
     const p = this.player;
     return findContact(
       p,
-      { path: ctx.path, bouncesSoFar: ctx.bouncesSinceHit, maxTime: 2, moveRate: p.maxSpeed * 0.95, slack: 0.6 },
+      { path: ctx.path, bouncesSoFar: ctx.bouncesSinceHit, maxTime: 2, slack: 1.0 },
       ctx.ball.flight,
     );
   }

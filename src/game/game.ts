@@ -8,6 +8,7 @@ import { Ball } from '../physics/ball';
 import { PHYS } from '../physics/constants';
 import { loadPlayerTemplate } from '../players/playerView';
 import { BallView } from '../render/ballView';
+import { Crowd } from '../render/crowd';
 import { loadCourt } from '../render/courtView';
 import { Stage } from '../render/stage';
 import { Hud } from '../ui/hud';
@@ -30,10 +31,13 @@ export class Game {
   private timeScale = 1;
   private paused = false;
   private orbit: OrbitControls | null = null;
+  private crowd: Crowd;
 
   constructor(container: HTMLElement, uiRoot: HTMLElement) {
     this.stage = new Stage(container);
     this.cam = new ArcadeCamera(window.innerWidth / window.innerHeight);
+    this.stage.setupPost(this.cam.camera);
+    this.crowd = new Crowd(this.stage.scene);
     const keys = new Keyboard();
     const ball = new Ball();
     ball.hold(new THREE.Vector3(0, 3, 21));
@@ -68,7 +72,7 @@ export class Game {
     const dt = Math.min((now - this.lastFrameAt) / 1000, 0.1);
     this.lastFrameAt = now;
     this.advance(dt);
-    this.stage.renderer.render(this.stage.scene, this.cam.camera);
+    this.stage.render(this.cam.camera);
     this.world.keys.endFrame();
   }
 
@@ -91,6 +95,7 @@ export class Game {
 
     if (!this.paused) mode.update(gameDt, this.time);
     ballView.update(ball, gameDt);
+    this.crowd.update(this.time, gameDt);
 
     if (this.orbit) this.orbit.update();
     else this.cam.update(dt, mode.cameraTargetX());

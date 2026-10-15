@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { addOutline, toonMaterial } from '../render/toon';
+import { addOutline, surfaceMaterial } from '../render/materials';
 import { BODY, legPose } from './body';
 import type { Palette } from './palette';
 import { RECOVER_TIME, type Player, type Swing } from './player';
@@ -20,6 +20,26 @@ const JOINTS = [
 type JointName = (typeof JOINTS)[number];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/** Per-material surface feel: skin has a soft sheen, the paddle is glossy, fabric is matte. */
+const SURFACE: Record<string, THREE.MeshStandardMaterialParameters> = {
+  skin: { roughness: 0.55 },
+  lips: { roughness: 0.45 },
+  hair: { roughness: 0.6 },
+  eye_white: { roughness: 0.2 },
+  iris: { roughness: 0.15 },
+  pupil: { roughness: 0.1 },
+  paddle: { roughness: 0.3 },
+  paddle_edge: { roughness: 0.4 },
+  shoe: { roughness: 0.6 },
+};
+
+/** Lips: the skin tone, a little darker and redder. */
+function lipColor(skin: string): string {
+  const c = new THREE.Color(skin);
+  c.offsetHSL(-0.02, 0.12, -0.14);
+  return `#${c.getHexString()}`;
+}
 const smooth = (t: number) => t * t * (3 - 2 * t);
 /** Time to swing the paddle from wind-up to contact. */
 const FORWARD_SWING = 0.13;
@@ -28,7 +48,10 @@ const FORWARD_SWING = 0.13;
 export class PlayerView {
   readonly root: THREE.Object3D;
   private j = {} as Record<JointName, THREE.Object3D>;
-  private runPhase = Math.random() * 10;
+  private phase = Math.random() * 10;
+  private yaw = Number.NaN;
+  private prevVel = new THREE.Vector3();
+  private accel = new THREE.Vector3();
 
   constructor(template: THREE.Object3D, palette: Palette) {
     this.root = template.clone(true);
@@ -37,18 +60,25 @@ export class PlayerView {
       if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
     });
     const materials = new Map<string, THREE.Material>();
+    const colors = { ...palette, lips: lipColor(palette.skin) } as unknown as Record<string, string>;
     for (const mesh of meshes) {
+      // Only show the headwear this player wears.
+      const n = mesh.name;
+      if ((n.startsWith('ol_cap') && palette.headwear !== 'cap') || (n === 'ol_headband' && palette.headwear !== 'headband')) {
+        mesh.visible = false;
+        continue;
+      }
       const src = mesh.material as THREE.MeshStandardMaterial;
       const slot = src.name;
       let m = materials.get(slot);
       if (!m) {
-        const color = (palette as unknown as Record<string, string>)[slot] ?? src.color;
-        m = toonMaterial(color);
+        m = surfaceMaterial(colors[slot] ?? src.color, SURFACE[slot] ?? {});
         materials.set(slot, m);
       }
       mesh.material = m;
-      mesh.castShadow = true;
-      if (mesh.name.startsWith('ol_')) addOutline(mesh, 0.0022);
+      mesh.castShadow = !n.startsWith('flat_');
+      mesh.receiveShadow = true;
+      if (n.startsWith('ol_')) addOutline(mesh, 0.0013);
     }
     for (const name of JOINTS) {
       const joint = this.root.getObjectByName(name);
@@ -59,35 +89,97 @@ export class PlayerView {
     this.j.j_shoulder_L.rotation.order = 'YZX';
   }
 
-  update(player: Player, time: number, dt: number): void {
+  /** @param ball ball position, so the head can follow it */
+  update(player: Player, time: number, dt: number, ball: THREE.Vector3): void {
     const j = this.j;
-    this.root.position.copy(player.pos);
-    this.root.rotation.y = player.yaw;
+    const vx = player.vel.x;
+    const vz = player.vel.z;
+    const speed = Math.hypot(vx, vz);
+    const fwd = player.forward;
+    const right = player.right;
+    // Velocity and (smoothed) acceleration in the player's own frame.
+    const vf = vx * fwd.x + vz * fwd.z;
+    const vr = vx * right.x + vz * right.z;
+    if (dt > 0) {
+      const k = 1 - Math.exp(-10 * dt);
+      this.accel.x += ((vx - this.prevVel.x) / dt - this.accel.x) * k;
+      this.accel.z += ((vz - this.prevVel.z) / dt - this.accel.z) * k;
+    }
+    this.prevVel.set(vx, 0, vz);
+    const af = this.accel.x * fwd.x + this.accel.z * fwd.z;
+    const ar = this.accel.x * right.x + this.accel.z * right.z;
 
-    const speed = Math.hypot(player.vel.x, player.vel.z);
-    const run = clamp01(speed / 13);
-    this.runPhase += dt * (5 + speed * 0.7);
-    const s = Math.sin(this.runPhase);
+    // Long sideways runs turn the body into a run; short moves stay square and shuffle.
+    const sideW = speed > 0.1 ? Math.abs(vr) / speed : 0;
+    const turn = player.swing ? 0 : clamp01((speed - 7) / 5) * sideW;
+    const targetYaw = player.yaw - Math.sign(vr) * 0.6 * turn;
+    if (Number.isNaN(this.yaw)) this.yaw = player.yaw;
+    this.yaw += (targetYaw - this.yaw) * (1 - Math.exp(-8 * dt));
+    const yawOffset = this.yaw - player.yaw;
+    this.root.position.copy(player.pos);
+    this.root.rotation.y = this.yaw;
+
+    // Steps follow distance covered (no skating): longer strides at higher speed.
+    const stride = 1.5 + speed * 0.1;
+    this.phase += ((speed * dt) / stride) * Math.PI;
+    const s = Math.sin(this.phase);
+    const moving = clamp01(speed / 3);
+    const runAmt = clamp01(speed / 14);
+    const shuffleW = sideW * (1 - turn);
+    const runW = 1 - shuffleW;
+    const backpedal = vf < -0.5 && turn < 0.5;
 
     const arm = player.swing ? swingPose(player.swing, time) : READY_POSE;
-    const crouch = arm.crouch * (1 - run * 0.4);
+    let crouch = arm.crouch * (1 - runAmt * 0.4) + 0.12 * shuffleW * moving;
+    let hop = 0;
+
+    // Split step: a little hop as the opponent strikes, landing low and ready.
+    const k = time - player.splitStepAt;
+    if (k >= 0 && k < 0.4 && !player.swing && speed < 6) {
+      if (k < 0.16) hop = Math.sin((Math.PI * k) / 0.16) * 0.2;
+      else crouch += (1 - (k - 0.16) / 0.24) * 0.25;
+    }
     const legs = legPose(crouch);
 
-    j.j_hips.position.y = BODY.hipsY - legs.drop + Math.abs(Math.cos(this.runPhase)) * 0.12 * run;
-    j.j_hip_R.rotation.set(legs.hip + s * 0.8 * run, 0, 0);
-    j.j_hip_L.rotation.set(legs.hip - s * 0.8 * run, 0, 0);
-    j.j_knee_R.rotation.set(legs.knee - Math.max(0, -s) * 1.1 * run, 0, 0);
-    j.j_knee_L.rotation.set(legs.knee - Math.max(0, s) * 1.1 * run, 0, 0);
+    const amp = moving * (0.3 + 0.5 * runAmt) * runW * (backpedal ? 0.6 : 1);
+    const spread = 0.26 * shuffleW * moving * (0.5 + 0.5 * s);
+    const breathe = speed < 0.5 ? Math.sin(time * 2.2) : 0;
+    j.j_hips.position.y =
+      BODY.hipsY - legs.drop + hop +
+      Math.abs(Math.cos(this.phase)) * 0.1 * runAmt * runW +
+      Math.abs(s) * 0.05 * shuffleW * moving +
+      breathe * 0.015;
+    j.j_hip_R.rotation.set(legs.hip + s * amp, 0, spread);
+    j.j_hip_L.rotation.set(legs.hip - s * amp, 0, -spread);
+    // Knee folds on the leg that's swinging through (reversed when backpedaling).
+    const foldR = Math.max(0, backpedal ? s : -s);
+    const foldL = Math.max(0, backpedal ? -s : s);
+    j.j_knee_R.rotation.set(legs.knee - foldR * 1.1 * amp, 0, 0);
+    j.j_knee_L.rotation.set(legs.knee - foldL * 1.1 * amp, 0, 0);
 
-    j.j_spine.rotation.set(-0.12 * run - crouch * 0.3, arm.spineY, 0);
-    j.j_neck.rotation.set(crouch * 0.25 + 0.06 * run, -arm.spineY * 0.6, 0);
+    // Lean into acceleration (forward when pushing off, back when braking, sideways into cuts).
+    const lean = (v: number) => Math.max(-40, Math.min(40, v));
+    j.j_spine.rotation.set(
+      -0.1 * runAmt * runW * (backpedal ? -0.4 : 1) - lean(af) * 0.006 - crouch * 0.3 + breathe * 0.02,
+      arm.spineY,
+      -lean(ar) * 0.005,
+    );
 
-    j.j_shoulder_R.rotation.set(arm.sx, arm.sy, arm.sz);
+    // Head tracks the ball.
+    const dx = ball.x - player.pos.x;
+    const dz = ball.z - player.pos.z;
+    const lx = dx * right.x + dz * right.z;
+    const lz = -(dx * fwd.x + dz * fwd.z);
+    const look = Math.max(-0.9, Math.min(0.9, Math.atan2(-lx, -lz) - yawOffset - arm.spineY));
+    const pitch = Math.max(-0.5, Math.min(0.5, Math.atan2(ball.y - BODY.headY, Math.hypot(lx, lz))));
+    j.j_neck.rotation.set(crouch * 0.25 + pitch * 0.6, look * 0.8, 0);
+
+    // Paddle arm swings a little while running; off arm pumps, or flares for balance in a swing.
+    const pump = player.swing ? 0 : s * 0.25 * runAmt * runW;
+    j.j_shoulder_R.rotation.set(arm.sx + pump, arm.sy, arm.sz);
     j.j_elbow_R.rotation.set(arm.ex, 0, 0);
-
-    // Off arm: pumps while running, flares out for balance during a swing.
-    j.j_shoulder_L.rotation.set(0.35 + s * 0.6 * run, 0, player.swing ? -0.55 : -0.3);
-    j.j_elbow_L.rotation.set(0.7 + 0.3 * run, 0, 0);
+    j.j_shoulder_L.rotation.set(0.35 + s * 0.6 * runAmt * runW, 0, player.swing ? -0.55 : -0.3 - 0.2 * shuffleW * moving);
+    j.j_elbow_L.rotation.set(0.7 + 0.4 * runAmt, 0, 0);
   }
 }
 

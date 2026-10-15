@@ -19,7 +19,9 @@ const KEYS = {
   right: ['KeyD', 'ArrowRight'],
   up: ['KeyW', 'ArrowUp'],
   down: ['KeyS', 'ArrowDown'],
-  drive: ['KeyJ', 'KeyZ', 'Space'],
+  // Shot buttons sit side by side: J + K for the right hand while the left uses WASD,
+  // or Z + X for the left hand when steering with the arrow keys.
+  drive: ['KeyJ', 'KeyZ'],
   soft: ['KeyK', 'KeyX'],
   feed: ['Enter'],
   pause: ['KeyP', 'Escape'],
