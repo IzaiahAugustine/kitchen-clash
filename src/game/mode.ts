@@ -7,6 +7,20 @@ import type { BallView } from '../render/ballView';
 import type { Crowd } from '../render/crowd';
 import type { Hud } from '../ui/hud';
 
+/** Visual juice the game provides to modes (absent in headless simulations). */
+export interface Fx {
+  /** Pop of light at a hit; `perfect` makes it big and gold. */
+  burst(at: THREE.Vector3, power: number, perfect: boolean): void;
+  /** Marker where the incoming ball will bounce (null hides it). */
+  setLanding(p: THREE.Vector3 | null): void;
+  /** Highlight of the service box to serve into (null hides it). */
+  setServeBox(box: { x0: number; x1: number; z0: number; z1: number } | null): void;
+  /** Camera shake (0..1). */
+  shake(amount: number): void;
+  /** Freeze the action for a moment (seconds) to sell a big hit. */
+  hitstop(seconds: number): void;
+}
+
 /** Shared pieces every game mode works with. */
 export interface World {
   scene: THREE.Scene;
@@ -18,6 +32,7 @@ export interface World {
   /** Missing in headless simulations. */
   audio?: Sound;
   crowd?: Crowd;
+  fx?: Fx;
 }
 
 /** A way of playing (Ball Lab, practice, a match...). The Game drives it each frame. */

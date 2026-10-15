@@ -307,10 +307,32 @@ export class MatchMode implements GameMode {
       if (!this.server.player.swing) clampServer(this.server.player, this.setup);
       this.holdBallForServe();
     }
+    this.updateGuides();
 
     for (const [p, v] of this.views) v.update(p, time, dt, ball.pos);
     this.markers.update(dt);
     this.scoreboard?.update(this.score);
+  }
+
+  /** On-court helpers for you: where the incoming ball lands, and where your serve must go. */
+  private updateGuides(): void {
+    const fx = this.w.fx;
+    const you = this.you;
+    if (!fx || !you) return;
+    let landing: Vector3 | null = null;
+    if (this.incomingTo(you.team) && this.bouncesSinceHit === 0) {
+      const s = this.path.find((p) => p.bounces >= 1);
+      if (s && sideOf(s.z) === you.player.side) landing = new Vector3(s.x, 0, s.z);
+    }
+    fx.setLanding(landing);
+    const serving = this.phase === 'preServe' && this.server === you && !you.player.swing;
+    if (!serving) {
+      fx.setServeBox(null);
+      return;
+    }
+    const rs = -you.player.side;
+    const bx = this.setup.boxSide;
+    fx.setServeBox({ x0: 0, x1: bx * COURT.halfWidth, z0: rs * COURT.kitchenDepth, z1: rs * COURT.halfLength });
   }
 
   private incomingTo(team: Team): boolean {
@@ -539,7 +561,15 @@ export class MatchMode implements GameMode {
   private onGoodHit(s: Seat, report: ShotReport): void {
     if (!s.human) return;
     const g = GRADE_TEXT[report.timing.grade];
-    if (report.timing.grade === 'perfect') this.perfects++;
+    if (report.timing.grade === 'perfect') {
+      this.perfects++;
+      this.w.fx?.burst(this.w.ball.pos, 1, true);
+      // A Perfect put-away gets a tiny freeze-frame and a camera kick.
+      if (report.kind === 'smash' || report.mph > 40) {
+        this.w.fx?.hitstop(0.07);
+        this.w.fx?.shake(0.5);
+      }
+    }
     if (s.player.contactGap() <= LUNGE_REACH) this.w.hud.tag(g.text, g.kind, overHead(s.player));
     this.lastShot = `${SHOT_NAMES[report.kind]} · ${report.mph.toFixed(0)} mph · ${g.text}`;
   }

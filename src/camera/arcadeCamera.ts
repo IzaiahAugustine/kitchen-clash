@@ -27,12 +27,26 @@ export class ArcadeCamera {
   private framing = FRAMINGS.close;
   private aspect: number;
   private orbitAngle = 0;
+  private shakeAmp = 0;
 
   constructor(aspect: number) {
     this.aspect = aspect;
     this.camera = new THREE.PerspectiveCamera(this.framing.fov, aspect, 0.5, 600);
     this.resize(aspect);
     this.update(0, 0);
+  }
+
+  /** Kick the camera (0..1); it settles quickly. */
+  shake(amount: number): void {
+    this.shakeAmp = Math.max(this.shakeAmp, amount);
+  }
+
+  private applyShake(dt: number): void {
+    if (this.shakeAmp <= 0.001) return;
+    const a = this.shakeAmp * 0.6;
+    this.camera.position.x += (Math.random() - 0.5) * a;
+    this.camera.position.y += (Math.random() - 0.5) * a;
+    this.shakeAmp *= Math.exp(-14 * dt);
   }
 
   setPreset(p: CameraPreset): void {
@@ -47,6 +61,7 @@ export class ArcadeCamera {
     this.focusX += (targetX * 0.3 - this.focusX) * k;
     this.camera.position.set(this.focusX, f.height, f.back);
     this.camera.lookAt(this.focusX * 0.5, 0, f.lookZ);
+    this.applyShake(dt);
   }
 
   /** Slow cinematic orbit around the court (title screen). */

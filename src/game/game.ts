@@ -12,6 +12,7 @@ import { loadPlayerTemplate } from '../players/playerView';
 import { BallView } from '../render/ballView';
 import { loadCourt } from '../render/courtView';
 import { Crowd } from '../render/crowd';
+import { Effects } from '../render/effects';
 import { Stage } from '../render/stage';
 import { DEFAULT_SCORING } from '../rules/scoring';
 import { Hud } from '../ui/hud';
@@ -53,6 +54,9 @@ export class Game {
   private timeScale = 1;
   private orbit: OrbitControls | null = null;
   private lastFlight = 0;
+  private effects: Effects;
+  /** Seconds of freeze-frame left (big hits). */
+  private freeze = 0;
   /** What "Rematch" / "Restart" restarts. */
   private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' = {
     near: 'human',
@@ -68,6 +72,7 @@ export class Game {
     this.cam = new ArcadeCamera(window.innerWidth / window.innerHeight);
     this.stage.setupPost(this.cam.camera);
     this.crowd = new Crowd(this.stage.scene);
+    this.effects = new Effects(this.stage.scene);
     const keys = new Keyboard();
     const ball = new Ball();
     ball.hold(new THREE.Vector3(0, 3, 21));
@@ -80,6 +85,13 @@ export class Game {
       controls: new Controls(keys),
       audio: this.sound,
       crowd: this.crowd,
+      fx: {
+        burst: (at, power, perfect) => this.effects.burst(at, power, perfect),
+        setLanding: (p) => this.effects.setLanding(p),
+        setServeBox: (b) => this.effects.setServeBox(b),
+        shake: (a) => this.cam.shake(a),
+        hitstop: (s) => (this.freeze = Math.max(this.freeze, s)),
+      },
     };
     this.scoreboard = new Scoreboard(this.uiRoot, ['YOU', 'CPU'], ['#ff6b35', '#7b2ff7']);
     this.world.hud.projector = (p) => {
@@ -128,6 +140,8 @@ export class Game {
 
   private setMode(mode: GameMode): void {
     this.mode?.dispose?.();
+    this.effects.setLanding(null);
+    this.effects.setServeBox(null);
     this.mode = mode;
     this.world.ballView.clearTrail();
   }
@@ -343,7 +357,9 @@ export class Game {
     }
 
     const frozen = this.state === 'paused' || this.state === 'results';
-    const gameDt = frozen ? 0 : dt * this.timeScale;
+    const stopped = this.freeze > 0;
+    this.freeze = Math.max(0, this.freeze - dt);
+    const gameDt = frozen || stopped ? 0 : dt * this.timeScale;
     this.accumulator += gameDt;
     while (this.accumulator >= PHYS.fixedDt) {
       mode.fixedUpdate(PHYS.fixedDt, this.time);
@@ -361,7 +377,8 @@ export class Game {
     }
 
     if (!frozen) mode.update(gameDt, this.time);
-    ballView.update(ball, gameDt);
+    ballView.update(ball, gameDt, this.cam.camera);
+    this.effects.update(dt, this.cam.camera);
     this.crowd.update(this.time, gameDt);
 
     if (this.orbit) this.orbit.update();
@@ -375,6 +392,10 @@ export class Game {
   private hitSound(): void {
     const b = this.world.ball;
     const power = Math.min(1, b.vel.length() / 60);
+    if (b.vel.lengthSq() > 0) {
+      this.effects.burst(b.pos, power, false);
+      if (power > 0.85 && this.state !== 'title') this.cam.shake(0.35 * power);
+    }
     this.sound.play('paddle', {
       volume: this.spatial(b.pos) * (0.45 + 0.55 * power),
       pitch: 0.92 + Math.random() * 0.16 + power * 0.08,
@@ -385,6 +406,7 @@ export class Game {
   private ballSound(e: BallEvent): void {
     const pos = new THREE.Vector3(e.x, e.y, e.z);
     if (e.type === 'bounce') {
+      this.world.ballView.squash(e.speed);
       this.sound.play('bounce', { volume: this.spatial(pos) * Math.min(1, 0.2 + e.speed / 30), pitch: 0.95 + Math.random() * 0.1, pan: e.x / 14 });
     } else {
       this.sound.play('net', { volume: e.type === 'net' ? 0.9 : 0.5, pan: e.x / 14 });

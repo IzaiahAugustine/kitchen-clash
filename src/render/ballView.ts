@@ -5,15 +5,32 @@ import { addOutline, surfaceMaterial } from './materials';
 
 /** Drawn bigger than the real ball so it reads clearly from the arcade camera. Physics is unaffected. */
 const VISUAL_SCALE = 1.8;
-const TRAIL_POINTS = 48;
+const TRAIL_POINTS = 28;
+
+const trailVertex = /* glsl */ `
+  attribute float alpha;
+  varying float vAlpha;
+  void main() {
+    vAlpha = alpha;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`;
+const trailFragment = /* glsl */ `
+  uniform vec3 color;
+  varying float vAlpha;
+  void main() { gl_FragColor = vec4(color, vAlpha); }`;
 
 export class BallView {
   readonly mesh: THREE.Mesh;
   private shadow: THREE.Mesh;
-  private trail: THREE.Line;
-  private trailPositions = new Float32Array(TRAIL_POINTS * 3);
-  private trailCount = 0;
+  private trail: THREE.Mesh;
+  private points: THREE.Vector3[] = [];
+  private trailPos = new Float32Array(TRAIL_POINTS * 2 * 3);
+  private trailAlpha = new Float32Array(TRAIL_POINTS * 2);
   private spinAxis = new THREE.Vector3();
+  private squashT = 1;
+  private squashAmt = 0;
+  private tmpA = new THREE.Vector3();
+  private tmpB = new THREE.Vector3();
 
   constructor(scene: THREE.Scene) {
     const r = PHYS.ballRadius * VISUAL_SCALE;
@@ -27,21 +44,47 @@ export class BallView {
     );
     this.shadow.renderOrder = 1;
 
-    const trailGeo = new THREE.BufferGeometry();
-    trailGeo.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
-    this.trail = new THREE.Line(
-      trailGeo,
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }),
+    // Tapered ribbon that always faces the camera, fading toward the tail.
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.trailPos, 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(this.trailAlpha, 1));
+    const index: number[] = [];
+    for (let i = 0; i < TRAIL_POINTS - 1; i++) {
+      const a = i * 2;
+      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    geo.setIndex(index);
+    this.trail = new THREE.Mesh(
+      geo,
+      new THREE.ShaderMaterial({
+        uniforms: { color: { value: new THREE.Color(0xfff6c8) } },
+        vertexShader: trailVertex,
+        fragmentShader: trailFragment,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
     );
     this.trail.frustumCulled = false;
+    this.trail.renderOrder = 2;
 
     scene.add(this.mesh, this.shadow, this.trail);
   }
 
-  update(ball: Ball, dt: number): void {
+  /** Squash the ball briefly when it bounces (harder bounces squash more). */
+  squash(impactSpeed: number): void {
+    this.squashT = 0;
+    this.squashAmt = Math.min(0.35, impactSpeed / 80);
+  }
+
+  update(ball: Ball, dt: number, camera?: THREE.Camera): void {
     // Lift the drawn ball so the enlarged sphere still sits on the court when it bounces.
     const lift = PHYS.ballRadius * (VISUAL_SCALE - 1);
     this.mesh.position.set(ball.pos.x, ball.pos.y + lift, ball.pos.z);
+
+    this.squashT = Math.min(1, this.squashT + dt / 0.12);
+    const sq = this.squashAmt * Math.sin(this.squashT * Math.PI);
+    this.mesh.scale.set(1 + sq * 0.6, 1 - sq, 1 + sq * 0.6);
 
     const w = ball.spin.length();
     if (w > 0.01) {
@@ -55,24 +98,44 @@ export class BallView {
     this.shadow.scale.setScalar(0.6 + 0.4 * s);
     (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.45 * s;
 
-    if (ball.inPlay) this.pushTrail(this.mesh.position);
+    if (ball.inPlay && dt > 0) {
+      this.points.unshift(this.mesh.position.clone());
+      if (this.points.length > TRAIL_POINTS) this.points.pop();
+    }
+    if (camera) this.buildTrail(camera, ball.vel.length());
   }
 
   clearTrail(): void {
-    this.trailCount = 0;
-    this.trail.geometry.setDrawRange(0, 0);
+    this.points = [];
+    this.trailAlpha.fill(0);
+    this.trail.geometry.attributes.alpha.needsUpdate = true;
   }
 
-  private pushTrail(p: THREE.Vector3): void {
-    const a = this.trailPositions;
-    if (this.trailCount < TRAIL_POINTS) this.trailCount++;
-    a.copyWithin(3, 0, (TRAIL_POINTS - 1) * 3);
-    a[0] = p.x;
-    a[1] = p.y;
-    a[2] = p.z;
-    const geo = this.trail.geometry;
-    geo.setDrawRange(0, this.trailCount);
-    geo.attributes.position.needsUpdate = true;
+  private buildTrail(camera: THREE.Camera, speed: number): void {
+    const n = this.points.length;
+    const width = PHYS.ballRadius * VISUAL_SCALE * 0.9;
+    // Faster balls leave a more visible streak.
+    const strength = Math.min(0.75, 0.2 + speed / 90);
+    for (let i = 0; i < TRAIL_POINTS; i++) {
+      const p = this.points[Math.min(i, n - 1)];
+      if (!p || n < 2) {
+        this.trailAlpha[i * 2] = this.trailAlpha[i * 2 + 1] = 0;
+        continue;
+      }
+      const prev = this.points[Math.max(0, Math.min(i, n - 1) - 1)];
+      const next = this.points[Math.min(n - 1, i + 1)];
+      const dir = this.tmpA.subVectors(prev, next);
+      const view = this.tmpB.subVectors(camera.position, p);
+      const side = dir.cross(view).normalize();
+      const k = 1 - i / TRAIL_POINTS;
+      side.multiplyScalar(width * k);
+      this.trailPos.set([p.x + side.x, p.y + side.y, p.z + side.z], i * 6);
+      this.trailPos.set([p.x - side.x, p.y - side.y, p.z - side.z], i * 6 + 3);
+      const a = i < n ? strength * k * k : 0;
+      this.trailAlpha[i * 2] = this.trailAlpha[i * 2 + 1] = a;
+    }
+    this.trail.geometry.attributes.position.needsUpdate = true;
+    this.trail.geometry.attributes.alpha.needsUpdate = true;
   }
 }
 
