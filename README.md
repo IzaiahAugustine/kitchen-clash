@@ -50,4 +50,5 @@ These skip the title screen (handy for testing):
 
 - `?lab`: Ball Lab (fire preset shots to test physics); add `&auto` for an auto rally
 - `?warp=6`: fast-forward 6 seconds before the first frame (for screenshots)
+- `?nohud`: hide all on-screen text (clean screenshots)
 - `?hifx`: add ambient occlusion (soft contact shadows); needs a strong GPU
