@@ -29,6 +29,8 @@ export class Menu {
   private index = 0;
   /** Called on every navigation / activation (for the click sound). */
   onNavigate: () => void = () => {};
+  /** Phones: show tap hints instead of keyboard hints. */
+  touch = false;
 
   constructor(root: HTMLElement) {
     this.layer = document.createElement('div');
@@ -114,7 +116,9 @@ export class Menu {
         </button>`;
       })
       .join('');
-    const hint = '<div class="menu-hint">↑↓ choose · ←→ change · Enter select · Esc back</div>';
+    const hint = this.touch
+      ? '<div class="menu-hint">Tap to choose · tap a setting to change it</div>'
+      : '<div class="menu-hint">↑↓ choose · ←→ change · Enter select · Esc back</div>';
     this.layer.innerHTML = `<div class="menu-card">${s.header}<div class="menu-items">${rows}</div>${hint}</div>`;
     this.layer.querySelectorAll<HTMLElement>('.menu-item').forEach((el) => {
       const i = Number(el.dataset.i);

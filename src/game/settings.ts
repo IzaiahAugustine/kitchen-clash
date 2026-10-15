@@ -17,6 +17,8 @@ export interface Settings {
   musicVolume: number;
   /** High adds ambient occlusion (needs a strong GPU). */
   graphics: 'standard' | 'high';
+  /** Finished (or skipped through) How to Play. */
+  tutorialDone: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfxVolume: 8,
   musicVolume: 6,
   graphics: 'standard',
+  tutorialDone: false,
 };
 
 const KEY = 'kitchen-clash-settings';

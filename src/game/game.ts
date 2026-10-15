@@ -22,6 +22,8 @@ import { debugFlag, hasDebugFlag } from './debugFlags';
 import { MatchMode, type Controller, type MatchResult } from './matchMode';
 import type { GameMode, World } from './mode';
 import { PracticeMode } from './practiceMode';
+import { TutorialMode } from './tutorialMode';
+import { TouchControls, isTouchDevice } from '../input/touch';
 import { loadSettings, saveSettings, type CameraPreset, type Settings } from './settings';
 
 type AppState = 'title' | 'playing' | 'paused' | 'results';
@@ -58,7 +60,8 @@ export class Game {
   /** Seconds of freeze-frame left (big hits). */
   private freeze = 0;
   /** What "Rematch" / "Restart" restarts. */
-  private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' = {
+  private touch: TouchControls | null = null;
+  private current: { near: Controller; far: Difficulty; doubles: boolean } | 'practice' | 'tutorial' = {
     near: 'human',
     far: 'medium',
     doubles: false,
@@ -101,6 +104,13 @@ export class Game {
     };
     this.menu = new Menu(this.uiRoot);
     this.menu.onNavigate = () => this.sound.play('click', { volume: 0.5 });
+    // Phones and tablets get on-screen controls (`?touch` forces them for testing).
+    if (isTouchDevice() || hasDebugFlag('touch')) {
+      this.touch = new TouchControls(this.uiRoot);
+      this.world.controls.touch = this.touch;
+      this.menu.touch = true;
+      document.body.classList.add('touch');
+    }
     this.applySettings();
 
     window.addEventListener('resize', () => {
@@ -120,6 +130,8 @@ export class Game {
       this.enterPlaying();
     } else if (hasDebugFlag('practice')) {
       this.startPractice();
+    } else if (hasDebugFlag('tutorial')) {
+      this.startTutorial();
     } else if (hasDebugFlag('watch') || hasDebugFlag('autoplay')) {
       const far = parseDifficulty(debugFlag('difficulty'));
       this.startMatch(parseDifficulty(debugFlag('near'), far), far, hasDebugFlag('doubles'));
@@ -173,14 +185,42 @@ export class Game {
     this.enterPlaying();
   }
 
+  private startTutorial(): void {
+    this.current = 'tutorial';
+    const t = new TutorialMode(this.world, this.template, this.uiRoot, !!this.touch);
+    t.onComplete = () => this.tutorialFinished();
+    this.setMode(t);
+    this.enterPlaying();
+    this.scoreboard.setVisible(false);
+  }
+
+  private tutorialFinished(): void {
+    this.settings.tutorialDone = true;
+    saveSettings(this.settings);
+    this.state = 'results';
+    this.touch?.setVisible(false);
+    this.sound.setMusic(true);
+    const s = this.settings;
+    this.menu.show({
+      header: `<div class="menu-headline">You're ready!</div><div class="menu-sub">Time to play a real match.</div>`,
+      items: [
+        { label: '▶ Play vs AI', primary: true, action: () => this.startMatch('human', s.difficulty) },
+        this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
+        { label: 'Main menu', action: () => this.showTitle() },
+      ],
+    });
+  }
+
   private restart(): void {
-    if (this.current === 'practice') this.startPractice();
+    if (this.current === 'tutorial') this.startTutorial();
+    else if (this.current === 'practice') this.startPractice();
     else this.startMatch(this.current.near, this.current.far, this.current.doubles);
   }
 
   private enterPlaying(): void {
     this.state = 'playing';
     this.menu.hide();
+    this.touch?.setVisible(true);
     this.world.hud.muted = false;
     this.scoreboard.setVisible(this.mode instanceof MatchMode);
     this.sound.setMusic(false);
@@ -190,6 +230,7 @@ export class Game {
   /** Title screen, with a CPU match playing behind it. */
   private showTitle(): void {
     this.state = 'title';
+    this.touch?.setVisible(false);
     this.setMode(this.matchMode('medium', 'hard', this.settings.format === 'doubles'));
     this.world.hud.muted = true;
     this.scoreboard.setVisible(false);
@@ -200,7 +241,12 @@ export class Game {
       variant: 'title',
       header: `<div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
-        { label: '▶ Play vs AI', primary: true, action: () => this.startMatch('human', s.difficulty) },
+        { label: '▶ Play vs AI', primary: s.tutorialDone, action: () => this.startMatch('human', s.difficulty) },
+        {
+          label: s.tutorialDone ? 'How to Play' : '★ How to Play (new? start here)',
+          primary: !s.tutorialDone,
+          action: () => this.startTutorial(),
+        },
         this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
         this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
         { label: 'Watch AI vs AI', action: () => this.showWatchSetup() },
@@ -246,6 +292,7 @@ export class Game {
 
   private showPause(): void {
     this.state = 'paused';
+    this.touch?.setVisible(false);
     this.sound.setMusic(true);
     this.menu.show({
       header: '<div class="menu-headline">Paused</div>',
@@ -262,6 +309,7 @@ export class Game {
   private showResults(r: MatchResult): void {
     if (this.state !== 'playing') return;
     this.state = 'results';
+    this.touch?.setVisible(false);
     this.sound.setMusic(true);
     const youWon = r.humanTeam && r.winner === 0;
     const headline = youWon ? 'YOU WIN!' : r.humanTeam ? 'SO CLOSE!' : `${r.names[r.winner]} WINS`;

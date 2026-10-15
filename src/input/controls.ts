@@ -1,7 +1,8 @@
 import { GamepadInput, PAD } from './gamepad';
 import type { Keyboard } from './keyboard';
+import type { TouchControls } from './touch';
 
-/** One frame of player input, merged from keyboard and gamepad. */
+/** One frame of player input, merged from keyboard, gamepad and touch. */
 export interface ControlFrame {
   /** Movement / aim, -1..1. x = right, y = up (toward the net). */
   moveX: number;
@@ -31,6 +32,9 @@ export class Controls {
   readonly pad = new GamepadInput();
   frame: ControlFrame = { moveX: 0, moveY: 0, drive: false, soft: false, feed: false, pause: false };
 
+  /** On-screen phone controls, when present. */
+  touch: TouchControls | null = null;
+
   constructor(private keys: Keyboard) {}
 
   /** Call once at the start of each rendered frame. */
@@ -46,20 +50,22 @@ export class Controls {
       x *= Math.SQRT1_2;
       y *= Math.SQRT1_2;
     }
-    const stick = this.pad.stick();
-    if (Math.hypot(stick.x, stick.y) > Math.hypot(x, y)) {
-      x = stick.x;
-      y = stick.y;
+    for (const stick of [this.pad.stick(), this.touch?.stick() ?? { x: 0, y: 0 }]) {
+      if (Math.hypot(stick.x, stick.y) > Math.hypot(x, y)) {
+        x = stick.x;
+        y = stick.y;
+      }
     }
+    const t = this.touch;
 
     const p = this.pad;
     this.frame = {
       moveX: x,
       moveY: y,
-      drive: pressed(KEYS.drive) || p.pressed(PAD.A),
-      soft: pressed(KEYS.soft) || p.pressed(PAD.X) || p.pressed(PAD.B),
+      drive: pressed(KEYS.drive) || p.pressed(PAD.A) || !!t?.take('drive'),
+      soft: pressed(KEYS.soft) || p.pressed(PAD.X) || p.pressed(PAD.B) || !!t?.take('soft'),
       feed: pressed(KEYS.feed) || p.pressed(PAD.Y),
-      pause: pressed(KEYS.pause) || p.pressed(PAD.START),
+      pause: pressed(KEYS.pause) || p.pressed(PAD.START) || !!t?.take('pause'),
     };
     return this.frame;
   }
