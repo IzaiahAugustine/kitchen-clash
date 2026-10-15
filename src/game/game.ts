@@ -73,6 +73,7 @@ export class Game {
     this.lastFrameAt = now;
     this.advance(dt);
     this.stage.render(this.cam.camera);
+    this.stage.adaptQuality(dt, now);
     this.world.keys.endFrame();
   }
 
@@ -130,6 +131,6 @@ export class Game {
       this.timeScale !== 1 ? '<span class="ok">SLOW-MO</span>' : '',
       this.orbit ? '<span class="ok">FREE CAM</span> (drag to orbit, scroll to zoom)' : '',
     ].filter(Boolean);
-    return `<div class="dim"><b>P</b> / Start Pause · <b>T</b> Slow-mo · <b>C</b> Free camera ${flags.join(' ')}</div>`;
+    return `<div class="dim"><b>P</b> Pause · <b>T</b> Slow-mo · <b>C</b> Free camera ${flags.join(' ')}</div>`;
   }
 }

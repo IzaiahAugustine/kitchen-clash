@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { addOutline, surfaceMaterial } from '../render/materials';
 import { BODY, legPose } from './body';
 import type { Palette } from './palette';
@@ -9,7 +10,43 @@ import { READY_POSE, lerpPose, type ArmPose } from './swingPoses';
 /** Loads the Blender-built player (public/models/player.glb) once; clone it per player. */
 export async function loadPlayerTemplate(): Promise<THREE.Object3D> {
   const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/player.glb`);
+  mergeParts(gltf.scene);
   return gltf.scene;
+}
+
+/**
+ * The model has ~55 separate parts. Parts that move together (same joint) and look the same
+ * (same material, same outline treatment) are merged into one mesh, cutting draw calls ~3x.
+ */
+function mergeParts(root: THREE.Object3D): void {
+  const joints: THREE.Object3D[] = [];
+  root.traverse((o) => {
+    if (o.name.startsWith('j_')) joints.push(o);
+  });
+  for (const joint of joints) {
+    const groups = new Map<string, THREE.Mesh[]>();
+    for (const child of joint.children) {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) continue;
+      const prefix = mesh.name.startsWith('ol_') ? 'ol_' : 'flat_';
+      const key = `${prefix}${(mesh.material as THREE.Material).name}`;
+      groups.set(key, [...(groups.get(key) ?? []), mesh]);
+    }
+    for (const [key, meshes] of groups) {
+      const geos = meshes.map((m) => {
+        m.updateMatrix();
+        const g = m.geometry.clone().applyMatrix4(m.matrix);
+        for (const name of Object.keys(g.attributes)) {
+          if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+        }
+        return g.index ? g : g.setIndex([...Array(g.attributes.position.count).keys()]);
+      });
+      const merged = new THREE.Mesh(mergeGeometries(geos)!, meshes[0].material);
+      merged.name = `${key}_${joint.name}`;
+      for (const m of meshes) joint.remove(m);
+      joint.add(merged);
+    }
+  }
 }
 
 const JOINTS = [
@@ -62,14 +99,14 @@ export class PlayerView {
     const materials = new Map<string, THREE.Material>();
     const colors = { ...palette, lips: lipColor(palette.skin) } as unknown as Record<string, string>;
     for (const mesh of meshes) {
-      // Only show the headwear this player wears.
       const n = mesh.name;
-      if ((n.startsWith('ol_cap') && palette.headwear !== 'cap') || (n === 'ol_headband' && palette.headwear !== 'headband')) {
+      const src = mesh.material as THREE.MeshStandardMaterial;
+      const slot = src.name;
+      // Only show the headwear this player wears.
+      if ((slot === 'cap' && palette.headwear !== 'cap') || (slot === 'headband' && palette.headwear !== 'headband')) {
         mesh.visible = false;
         continue;
       }
-      const src = mesh.material as THREE.MeshStandardMaterial;
-      const slot = src.name;
       let m = materials.get(slot);
       if (!m) {
         m = surfaceMaterial(colors[slot] ?? src.color, SURFACE[slot] ?? {});

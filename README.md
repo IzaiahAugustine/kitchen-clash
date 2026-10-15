@@ -34,4 +34,4 @@ npm run dev        # opens http://localhost:5173
 - `?lab`: Ball Lab (fire preset shots to test physics); add `&auto` for an auto rally
 - `?autoplay`: a bot plays your side too
 - `?warp=6`: fast-forward 6 seconds before the first frame (for screenshots)
-- `?lowfx`: turn off ambient occlusion and anti-aliased post-processing (for slow machines)
+- `?hifx`: add ambient occlusion (soft contact shadows); needs a strong GPU

@@ -178,17 +178,15 @@ export class PracticeMode implements GameMode {
   }
 
   describe(): string {
-    const pad = this.w.controls.pad;
     return `
       <div class="title">Kitchen Clash <small>Practice · Phase 2</small></div>
-      <div><b>WASD</b> move + <b>J</b> <b>K</b> hit &nbsp;·&nbsp; or <b>Arrows</b> move + <b>Z</b> <b>X</b> hit &nbsp;·&nbsp; 🎮 stick + <b>A</b> <b>X</b></div>
-      <div><b>J / Z</b> (🎮 A) Drive · dink at the kitchen · smash high balls</div>
-      <div><b>K / X</b> (🎮 X/B) Soft · drop from the back · reset midcourt · lob at the kitchen</div>
-      <div><b>Enter</b> (Y) Feed now</div>
+      <div><b>WASD</b> move + <b>J</b> <b>K</b> hit &nbsp;·&nbsp; or <b>Arrows</b> move + <b>Z</b> <b>X</b> hit</div>
+      <div><b>J / Z</b> Drive · dink at the kitchen · smash high balls</div>
+      <div><b>K / X</b> Soft · drop from the back · reset midcourt · lob at the kitchen</div>
+      <div><b>Enter</b> Feed now</div>
       <hr/>
       <div class="big">Rally ${this.rally} <span class="dim">· Best ${this.best}</span></div>
-      <div>Last shot: ${this.lastShot}</div>
-      <div class="dim">${pad.connected ? '🎮 Gamepad connected' : 'Plug in a gamepad any time'}</div>`;
+      <div>Last shot: ${this.lastShot}</div>`;
   }
 
   cameraTargetX(): number {

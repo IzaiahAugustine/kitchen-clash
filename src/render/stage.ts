@@ -6,9 +6,13 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { hasDebugFlag } from '../game/debugFlags';
 
+/** Highest render resolution multiplier we'll use (Retina screens report 2). */
+const MAX_PIXEL_RATIO = 1.5;
+const MIN_PIXEL_RATIO = 0.75;
+
 /**
- * Renderer, scene, sky and lights, plus post-processing: ambient occlusion (soft contact
- * shadows where things meet) and filmic tone mapping. `?lowfx` turns the extras off.
+ * Renderer, scene, sky and lights. Resolution adapts to keep the frame rate smooth.
+ * `?hifx` adds ambient occlusion (soft contact shadows) for fast GPUs.
  */
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
@@ -16,10 +20,13 @@ export class Stage {
   readonly sun: THREE.DirectionalLight;
   private composer: EffectComposer | null = null;
   private ao: GTAOPass | null = null;
+  private pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+  private frameTimes: number[] = [];
+  private lastAdjust = 0;
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
@@ -40,12 +47,12 @@ export class Stage {
     this.sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
     this.sun.position.set(-30, 70, 30);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(4096, 4096);
+    this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera;
-    sc.left = -36;
-    sc.right = 36;
-    sc.top = 46;
-    sc.bottom = -46;
+    sc.left = -30;
+    sc.right = 30;
+    sc.top = 40;
+    sc.bottom = -40;
     sc.near = 20;
     sc.far = 160;
     this.sun.shadow.bias = -0.0004;
@@ -56,7 +63,7 @@ export class Stage {
 
   /** Call once the camera exists. */
   setupPost(camera: THREE.Camera): void {
-    if (hasDebugFlag('lowfx')) return;
+    if (!hasDebugFlag('hifx')) return;
     const w = window.innerWidth;
     const h = window.innerHeight;
     const target = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
@@ -72,6 +79,29 @@ export class Stage {
   render(camera: THREE.Camera): void {
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, camera);
+  }
+
+  /**
+   * Call once per frame with the real frame time. If frames are running slow, render at a
+   * lower resolution; if there's headroom, step back up.
+   */
+  adaptQuality(dt: number, now: number): void {
+    this.frameTimes.push(dt);
+    if (this.frameTimes.length > 90) this.frameTimes.shift();
+    if (now - this.lastAdjust < 2000 || this.frameTimes.length < 60) return;
+    const sorted = [...this.frameTimes].sort((a, b) => a - b);
+    const typical = sorted[Math.floor(sorted.length * 0.5)];
+    const max = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+    let next = this.pixelRatio;
+    if (typical > 1 / 50) next = Math.max(MIN_PIXEL_RATIO, this.pixelRatio - 0.25);
+    else if (typical < 1 / 58 && this.pixelRatio < max) next = Math.min(max, this.pixelRatio + 0.25);
+    if (next !== this.pixelRatio) {
+      this.pixelRatio = next;
+      this.renderer.setPixelRatio(next);
+      this.resize();
+      this.frameTimes = [];
+    }
+    this.lastAdjust = now;
   }
 
   resize(): void {
