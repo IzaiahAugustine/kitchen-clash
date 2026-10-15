@@ -207,6 +207,7 @@ export class Game {
     for (let i = 0; i < warp * 60; i++) this.advance(1 / 60);
     this.lastFrameAt = performance.now();
     this.stage.renderer.setAnimationLoop(() => this.frame());
+    this.keepOnlineRunningInBackground();
   }
 
   // ---------------------------------------------------------------- modes & screens
@@ -812,6 +813,34 @@ export class Game {
     if (!covered) this.stage.render(this.cam.camera);
     this.stage.adaptQuality(dt, now);
     this.world.keys.endFrame();
+  }
+
+  /**
+   * Browsers stop drawing frames in a hidden tab (another tab in front, window minimized), which
+   * would freeze an online match for BOTH players. A tiny worker keeps ticking (worker timers
+   * aren't put to sleep the same way), and while the page is hidden during an online match each
+   * tick runs the game logic without drawing.
+   */
+  private keepOnlineRunningInBackground(): void {
+    if (typeof Worker === 'undefined' || typeof document === 'undefined') return;
+    let worker: Worker;
+    try {
+      const src = 'let t=null;onmessage=(e)=>{clearInterval(t);t=e.data?setInterval(()=>postMessage(0),16):null;};';
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    } catch {
+      return;
+    }
+    worker.onmessage = () => {
+      if (!document.hidden || !this.mode?.online) return;
+      const now = performance.now();
+      const dt = Math.min((now - this.lastFrameAt) / 1000, 0.25);
+      this.lastFrameAt = now;
+      this.advance(dt);
+      this.world.keys.endFrame();
+    };
+    const sync = () => worker.postMessage(document.hidden);
+    document.addEventListener('visibilitychange', sync);
+    sync();
   }
 
   /** Runs one frame of game logic (everything except drawing). */

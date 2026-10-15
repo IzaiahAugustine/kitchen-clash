@@ -21,7 +21,7 @@ import type { Channel } from './channel';
 import { encodePlan, type SwingDesc } from './onlineHost';
 
 /** How often we send our position (per second). */
-const INPUT_RATE = { p2p: 30, relay: 10, loopback: 30 };
+const INPUT_RATE = { p2p: 30, relay: 20, loopback: 30 };
 /** The host's player is drawn this far in the past, so there are always two snapshots to blend. */
 const INTERP_DELAY = 0.1;
 /** How long (s) our own hit is trusted before the host has to confirm it. */

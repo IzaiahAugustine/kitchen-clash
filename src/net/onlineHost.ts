@@ -10,7 +10,7 @@ import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
 
 /** Snapshots per second: direct connections can take a lot; Firebase relay less. */
-const SNAP_RATE = { p2p: 30, relay: 10, loopback: 30 };
+const SNAP_RATE = { p2p: 30, relay: 20, loopback: 30 };
 
 /** A player's swing, as the guest needs it to animate (times are host game time). */
 export interface SwingDesc {
