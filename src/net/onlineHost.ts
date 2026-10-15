@@ -23,13 +23,27 @@ export interface SwingDesc {
   e: number;
   cp: [number, number, number];
   cr: number;
+  /** The planned shot (so the guest can play it the moment of contact) and the ball's flight. */
+  p?: (number | null)[];
+  f?: number;
 }
 
 export function swingDesc(p: Player): SwingDesc | null {
   const sw = p.swing;
   if (!sw || !sw.contact) return null;
   const c = sw.contact.pos;
-  return { b: sw.button, k: sw.kind, hand: sw.hand, s: sw.startAt, c: sw.contactAt, e: sw.endAt, cp: [c.x, c.y, c.z], cr: sw.contact.crouch };
+  return {
+    b: sw.button,
+    k: sw.kind,
+    hand: sw.hand,
+    s: sw.startAt,
+    c: sw.contactAt,
+    e: sw.endAt,
+    cp: [c.x, c.y, c.z],
+    cr: sw.contact.crouch,
+    p: sw.plan && !sw.feed ? encodePlan(sw.plan) : undefined,
+    f: sw.contact.flight,
+  };
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;

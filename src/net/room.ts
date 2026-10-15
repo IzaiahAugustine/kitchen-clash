@@ -1,6 +1,7 @@
 import type { DatabaseReference } from 'firebase/database';
 import type { Channel } from './channel';
 import { getDb } from './firebase';
+import { debugFlag } from '../game/debugFlags';
 
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 /**
@@ -72,6 +73,14 @@ export class Room {
 
   /** Opens the game channel: direct (WebRTC) if possible, otherwise relayed through Firebase. */
   async connect(): Promise<Channel> {
+    const channel = await this.open();
+    // Test hook: `?netlag=115&jitter=30&loss=0.02` adds delay (ms, each way, from this side),
+    // random extra delay, and lost fast-channel messages, to try bad connections on one computer.
+    const lag = Number(debugFlag('netlag') ?? 0);
+    return lag > 0 ? new LaggyChannel(channel, lag, Number(debugFlag('jitter') ?? 0), Number(debugFlag('loss') ?? 0)) : channel;
+  }
+
+  private async open(): Promise<Channel> {
     const fb = this.fb;
     this.unsubs.push(
       fb.onValue(fb.child(this.root, 'left'), (s) => s.exists() && this.gone()),
@@ -274,5 +283,42 @@ class RelayChannel extends Inbox implements Channel {
   }
   close(): void {
     this.onClose();
+  }
+}
+
+/** Wraps a channel with artificial delay, jitter and loss (testing only). */
+class LaggyChannel implements Channel {
+  private lastReliable = 0;
+  constructor(
+    private inner: Channel,
+    private lag: number,
+    private jitter: number,
+    private loss: number,
+  ) {}
+  get kind() {
+    return this.inner.kind;
+  }
+  get onMessage() {
+    return this.inner.onMessage;
+  }
+  set onMessage(h: (msg: Record<string, unknown>) => void) {
+    this.inner.onMessage = h;
+  }
+  get onClose() {
+    return this.inner.onClose;
+  }
+  set onClose(h: () => void) {
+    this.inner.onClose = h;
+  }
+  send(msg: object, reliable = true): void {
+    if (!reliable && Math.random() < this.loss) return;
+    let at = performance.now() + this.lag + Math.random() * this.jitter;
+    // Reliable messages stay in order (like the real reliable channel).
+    if (reliable) at = this.lastReliable = Math.max(at, this.lastReliable);
+    const copy = JSON.parse(JSON.stringify(msg)) as object;
+    setTimeout(() => this.inner.send(copy, reliable), at - performance.now());
+  }
+  close(): void {
+    this.inner.close();
   }
 }

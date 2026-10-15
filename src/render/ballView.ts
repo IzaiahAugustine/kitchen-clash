@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { netStats } from '../net/stats';
 import type { Ball } from '../physics/ball';
 import { PHYS } from '../physics/constants';
 import { addOutline, surfaceMaterial } from './materials';
@@ -95,7 +96,15 @@ export class BallView {
     const o = this.drawOffset;
     // Lift the drawn ball so the enlarged sphere still sits on the court when it bounces.
     const lift = PHYS.ballRadius * (VISUAL_SCALE - 1);
+    const px = this.mesh.position.x;
+    const py = this.mesh.position.y;
+    const pz = this.mesh.position.z;
     this.mesh.position.set(ball.pos.x + o.x, Math.max(PHYS.ballRadius, ball.pos.y + o.y) + lift, ball.pos.z + o.z);
+    if (ball.inPlay && dt > 0) {
+      netStats.drawnFrames++;
+      const moved = Math.hypot(this.mesh.position.x - px, this.mesh.position.y - py, this.mesh.position.z - pz);
+      if (moved > Math.max(1.2, ball.vel.length() * dt * 2.5)) netStats.drawnJumps++;
+    }
 
     this.squashT = Math.min(1, this.squashT + dt / 0.12);
     const sq = this.squashAmt * Math.sin(this.squashT * Math.PI);

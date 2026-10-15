@@ -18,17 +18,20 @@ import { DEFAULT_SCORING, Score, type ScoreConfig, type Team } from '../rules/sc
 import { clampServer, type ServeSetup } from '../rules/serve';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
-import { encodePlan, type SwingDesc } from './onlineHost';
+import { decodePlan, encodePlan, type SwingDesc } from './onlineHost';
 import { netStats } from './stats';
 
 /** How often we send our position (per second). */
 const INPUT_RATE = { p2p: 30, relay: 20, loopback: 30 };
 /** The host's player is drawn this far in the past, so there are always two snapshots to blend. */
-const INTERP_DELAY = 0.1;
+const INTERP_DELAY = 0.03;
+/** Draw the host up to this far (s) past their newest update, moving with their velocity. */
+const MAX_EXTRAPOLATE = 0.3;
 /** How long (s) our own hit is trusted before the host has to confirm it. */
 const PREDICT_HOLD = 1.0;
 
 const ME: Team = 1;
+const HOST: Team = 0;
 const overHead = (p: Player) => new Vector3(p.pos.x, 6.8, p.pos.z);
 const GRADE = { perfect: ['Perfect!', 'good'], good: ['Nice!', 'info'], early: ['Early', 'bad'], late: ['Late', 'bad'] } as const;
 
@@ -118,6 +121,8 @@ export class OnlineGuest implements GameMode {
   private gotHello = false;
   private lastSnapAt = -Infinity;
   private drawnFrom = new Vector3();
+  /** The host's next shot, known before it happens (their swing is sent at the press). */
+  private hostShot: { at: number; flight: number; swing: Swing } | null = null;
   /** Flight number of our own predicted hit, and until when to trust it over older snapshots. */
   private predictedFlight = -1;
   private predictUntil = 0;
@@ -305,6 +310,12 @@ export class OnlineGuest implements GameMode {
     if (sw && sw.s !== this.hostSwingStart) {
       this.hostSwingStart = sw.s;
       this.host.swing = this.rebuildSwing(sw);
+      // Their shot is already decided: play it on our screen right at their contact time.
+      if (sw.p && sw.f !== undefined) {
+        const swing = this.rebuildSwing(sw);
+        swing.plan = decodePlan(sw.p);
+        this.hostShot = { at: sw.c - this.offset, flight: sw.f, swing };
+      }
     }
   }
 
@@ -424,6 +435,16 @@ export class OnlineGuest implements GameMode {
     const rt = time + this.offset - INTERP_DELAY;
     const s = this.samples;
     if (!s.length) return;
+    const last = s[s.length - 1];
+    if (rt >= last.h) {
+      // Updates are ~a tenth of a second old by the time they arrive: carry them forward.
+      const ahead = Math.min(rt - last.h, MAX_EXTRAPOLATE);
+      this.host.pos.x = last.x + last.vx * ahead;
+      this.host.pos.z = last.z + last.vz * ahead;
+      this.host.vel.set(last.vx, 0, last.vz);
+      if (this.host.swing && time > this.host.swing.endAt + 0.3) this.host.swing = null;
+      return;
+    }
     let a = s[0];
     let b = s[s.length - 1];
     for (let i = 0; i < s.length - 1; i++) {
@@ -459,6 +480,18 @@ export class OnlineGuest implements GameMode {
   fixedUpdate(dt: number, time: number): void {
     const me = this.me;
     me.step(dt, time);
+    const hs = this.hostShot;
+    if (hs && time >= hs.at) {
+      this.hostShot = null;
+      const ball = this.w.ball;
+      if (ball.inPlay && ball.flight === hs.flight && this.phase === 'rally' && this.lastHitterTeam === ME) {
+        executeShot(ball, this.host, hs.swing, { x: 0, y: 0 });
+        this.predictedFlight = ball.flight;
+        this.predictUntil = time + PREDICT_HOLD;
+        this.lastHitterTeam = HOST;
+        this.bounces = 0;
+      }
+    }
     const sw = me.swing;
     if (!sw || sw.resolved || time < sw.contactAt) return;
     sw.resolved = true;

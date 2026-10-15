@@ -11,6 +11,10 @@ export const netStats = {
   heldForPrediction: 0,
   /** Sum of how old snapshots were on arrival (s), for an average. */
   ageSum: 0,
+  /** Frames where the DRAWN ball jumped more than its speed explains (what players see as glitching). */
+  drawnJumps: 0,
+  /** Frames with the ball in play (to put drawnJumps in proportion). */
+  drawnFrames: 0,
   /** Host messages that arrived and were handled. */
   hostMsgs: 0,
 };

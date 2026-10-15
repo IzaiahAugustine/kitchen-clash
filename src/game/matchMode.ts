@@ -22,7 +22,7 @@ import { HumanController } from '../players/humanController';
 import { PALETTES, type Palette } from '../players/palette';
 import { LUNGE_REACH, Player, type Contact, type Swing } from '../players/player';
 import { PlayerView } from '../players/playerView';
-import { SET_ZONE, SHOT_NAMES, type Aim, type ShotButton, type ShotKind, type ShotPlan, type Timing } from '../players/shots';
+import { SET_ZONE, SHOT_NAMES, planShot, spinStreakTiming, type Aim, type ShotButton, type ShotKind, type ShotPlan, type Timing } from '../players/shots';
 import { BounceMarkers } from '../render/markers';
 import { FAULT_TEXT, Referee, type Fault } from '../rules/referee';
 import {
@@ -505,6 +505,17 @@ export class MatchMode implements GameMode {
       const swing = beginSwing(button, time, contact);
       p.swing = swing;
       if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(p));
+      // Online: decide the shot now so the friend's screen can play it at the same instant.
+      if (this.remoteInput && swing.contact && swing.timing) {
+        const spun = button === 'spin';
+        if (spun) swing.timing = spinStreakTiming(swing.timing, p.spinStreak);
+        swing.plan = planShot(swing.kind as ShotKind, swing.contact.pos, p.side, swing.hand, ctl.aim, swing.timing, spun, {
+          incomingSpeed: ball.vel.length(),
+          hitterSpeed: Math.hypot(p.vel.x, p.vel.z),
+          towardNet: -p.side * p.vel.z,
+          volley: !swing.contact.bounced,
+        });
+      }
       if (contact && this.doubles) {
         // You called it: your partner backs off.
         this.owner[s.team] = { flight: ball.flight, seat: s.index };
