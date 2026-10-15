@@ -121,9 +121,11 @@ export class OnlineHost implements GameMode {
         });
         break;
       case 'ready':
-        console.info('[KC] host: guest is ready, starting the match');
-        // The friend's game is listening: start the match for real.
+        // The friend's game is listening: start the match for real (once; they may repeat it).
         this.channel.send({ t: 'hello', hostName: this.hostName, scoring: this.scoring, venue: this.venue }, true);
+        if (this.started) break;
+        this.started = true;
+        console.info('[KC] host: guest is ready, starting the match');
         this.match.newGame();
         break;
       case 'ping':
@@ -139,6 +141,7 @@ export class OnlineHost implements GameMode {
 
   private now = 0;
   private pinged = false;
+  private started = false;
 
   /** Host chose Rematch. */
   rematch(): void {

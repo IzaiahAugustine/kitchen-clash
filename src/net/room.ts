@@ -3,8 +3,12 @@ import type { Channel } from './channel';
 import { getDb } from './firebase';
 
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-/** If a direct connection isn't up by then, fall back to relaying through Firebase. */
+/**
+ * If a direct connection isn't up by then, fall back to relaying through Firebase. The host
+ * decides (and tells the guest via `mode`), so both ends always use the same kind of channel.
+ */
 const P2P_TIMEOUT_MS = 7000;
+const GUEST_P2P_TIMEOUT_MS = 12000;
 
 export type Role = 'host' | 'guest';
 
@@ -78,8 +82,13 @@ export class Room {
       if (typeof RTCPeerConnection === 'undefined') throw new Error('no WebRTC');
       // Test hook: `?relay` skips the direct connection.
       if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('relay')) throw new Error('relay forced');
-      return await this.connectP2P();
-    } catch {
+      const channel = await this.connectP2P();
+      console.info('[KC] direct connection');
+      return channel;
+    } catch (err) {
+      console.info(`[KC] using relay (${err instanceof Error ? err.message : err})`);
+      // Tell the other side to switch too (it may still be waiting on the direct connection).
+      await fb.set(fb.child(this.root, `mode/${this.role}`), 'relay').catch(() => {});
       return this.connectRelay();
     }
   }
@@ -124,15 +133,30 @@ export class Room {
 
     return new Promise<Channel>((resolve, reject) => {
       const channels: Record<string, RTCDataChannel> = {};
-      const timer = setTimeout(() => reject(new Error('p2p timeout')), P2P_TIMEOUT_MS);
+      // Messages can arrive before both channels are open here (the other side may be ready
+      // first): keep them for the channel instead of dropping them.
+      const early: Record<string, unknown>[] = [];
+      let done = false;
+      const fail = (why: string) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        reject(new Error(why));
+      };
+      const timer = setTimeout(() => fail('p2p timeout'), this.role === 'host' ? P2P_TIMEOUT_MS : GUEST_P2P_TIMEOUT_MS);
+      // The other side gave up on the direct connection: follow it to the relay.
+      const other = this.role === 'host' ? 'guest' : 'host';
+      this.unsubs.push(fb.onValue(fb.child(this.root, `mode/${other}`), (s) => s.exists() && fail('other side chose relay')));
       const ready = () => {
-        if (channels.ev?.readyState === 'open' && channels.st?.readyState === 'open') {
+        if (!done && channels.ev?.readyState === 'open' && channels.st?.readyState === 'open') {
+          done = true;
           clearTimeout(timer);
-          resolve(new P2PChannel(channels.ev, channels.st));
+          resolve(new P2PChannel(channels.ev, channels.st, early));
         }
       };
       const track = (c: RTCDataChannel) => {
         channels[c.label] = c;
+        c.onmessage = (e) => early.push(JSON.parse(e.data as string));
         c.onopen = ready;
         ready();
       };
@@ -177,26 +201,52 @@ export class Room {
     const out = fb.child(this.root, `relay/${this.role === 'host' ? 'toGuest' : 'toHost'}`);
     const inbox = fb.child(this.root, `relay/${this.role === 'host' ? 'toHost' : 'toGuest'}`);
     const channel = new RelayChannel((msg) => void fb.push(out, { m: JSON.stringify(msg) }));
+    // Only the ones that arrive from now on: anything from the abandoned direct attempt is stale.
     this.unsubs.push(
       fb.onChildAdded(inbox, (s) => {
         void fb.remove(s.ref);
-        channel.onMessage(JSON.parse((s.val() as { m: string }).m));
+        channel.receive(JSON.parse((s.val() as { m: string }).m));
       }),
     );
     return channel;
   }
 }
 
-class P2PChannel implements Channel {
+/**
+ * Holds incoming messages until the game attaches its handler, so nothing sent in the first
+ * moments of a connection (like the guest's 'ready') is lost.
+ */
+class Inbox {
+  private handler: ((msg: Record<string, unknown>) => void) | null = null;
+  private queue: Record<string, unknown>[] = [];
+
+  get onMessage(): (msg: Record<string, unknown>) => void {
+    return (m) => this.receive(m);
+  }
+
+  set onMessage(h: (msg: Record<string, unknown>) => void) {
+    this.handler = h;
+    for (const m of this.queue.splice(0)) h(m);
+  }
+
+  receive(m: Record<string, unknown>): void {
+    if (this.handler) this.handler(m);
+    else this.queue.push(m);
+  }
+}
+
+class P2PChannel extends Inbox implements Channel {
   readonly kind = 'p2p' as const;
-  onMessage: (msg: Record<string, unknown>) => void = () => {};
   onClose: () => void = () => {};
 
   constructor(
     private ev: RTCDataChannel,
     private st: RTCDataChannel,
+    early: Record<string, unknown>[],
   ) {
-    const recv = (e: MessageEvent) => this.onMessage(JSON.parse(e.data as string));
+    super();
+    for (const m of early) this.receive(m);
+    const recv = (e: MessageEvent) => this.receive(JSON.parse(e.data as string));
     ev.onmessage = recv;
     st.onmessage = recv;
     ev.onclose = () => this.onClose();
@@ -213,11 +263,12 @@ class P2PChannel implements Channel {
   }
 }
 
-class RelayChannel implements Channel {
+class RelayChannel extends Inbox implements Channel {
   readonly kind = 'relay' as const;
-  onMessage: (msg: Record<string, unknown>) => void = () => {};
   onClose: () => void = () => {};
-  constructor(private write: (msg: object) => void) {}
+  constructor(private write: (msg: object) => void) {
+    super();
+  }
   send(msg: object): void {
     this.write(msg);
   }

@@ -98,7 +98,13 @@ export class OnlineGuest implements GameMode {
     scoreboard?.setNames([hostName.toUpperCase().slice(0, 14), 'YOU']);
     channel.onMessage = (m) => this.receive(m);
     channel.onClose = () => this.onGone();
-    channel.send({ t: 'ready' }, true);
+    // Say we're ready until the host answers (a message can get lost while connecting).
+    const sayReady = () => {
+      if (this.gotHello) return;
+      channel.send({ t: 'ready' }, true);
+      this.readyTimer = setTimeout(sayReady, 1000);
+    };
+    sayReady();
     this.ping();
   }
 
@@ -106,11 +112,16 @@ export class OnlineGuest implements GameMode {
     return -1;
   }
 
+  private gotHello = false;
+  private readyTimer: ReturnType<typeof setTimeout> | undefined;
+
   leave(): void {
+    clearTimeout(this.readyTimer);
     this.channel.send({ t: 'bye' }, true);
   }
 
   dispose(): void {
+    clearTimeout(this.readyTimer);
     for (const [, v] of this.views) this.w.scene.remove(v.root);
     this.w.fx?.setLanding(null);
     this.w.fx?.setServeBox(null);
@@ -125,6 +136,8 @@ export class OnlineGuest implements GameMode {
   private receive(m: Record<string, unknown>): void {
     switch (m.t) {
       case 'hello':
+        this.gotHello = true;
+        clearTimeout(this.readyTimer);
         this.hostName = m.hostName as string;
         this.score = new Score({ ...(m.scoring as ScoreConfig), teamSize: 1 }, 0);
         this.scoreboard?.setNames([this.hostName.toUpperCase().slice(0, 14), 'YOU']);
