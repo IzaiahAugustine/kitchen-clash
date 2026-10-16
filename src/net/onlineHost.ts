@@ -8,7 +8,7 @@ import { Vector3 } from 'three';
 import type { ScoreConfig } from '../rules/scoring';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
-import { netStats } from './stats';
+import { healthLine, netStats } from './stats';
 
 /** Snapshots per second: direct connections can take a lot; Firebase relay less. */
 const SNAP_RATE = { p2p: 30, relay: 20, loopback: 30 };
@@ -143,6 +143,8 @@ export class OnlineHost implements GameMode {
           remote.vel = { x: m.vx as number, z: m.vz as number };
           remote.lag = (m.lag as number) ?? 0;
         }
+        if (typeof m.fp === 'number') this.friendFps = m.fp;
+        if (typeof m.lag === 'number') this.pingMs = m.lag * 2000;
         break;
       case 'press':
         remote?.presses.push({
@@ -176,6 +178,8 @@ export class OnlineHost implements GameMode {
 
   private now = 0;
   private pinged = false;
+  private friendFps: number | null = null;
+  private pingMs: number | null = null;
   private started = false;
 
   /** Host chose Rematch. */
@@ -216,6 +220,7 @@ export class OnlineHost implements GameMode {
         mlb: st.mustLetBounce ? 1 : 0,
         hp: [r2(host.pos.x), r2(host.pos.z), r2(host.vel.x), r2(host.vel.z)],
         sw: swingDesc(host),
+        fp: Math.round(netStats.fps),
       },
       false,
     );
@@ -232,7 +237,11 @@ export class OnlineHost implements GameMode {
   }
 
   describe(): string {
-    return this.match.describe() + `<div class="dim">Online · ${this.channel.kind === 'p2p' ? 'direct connection' : 'relayed connection'}</div>`;
+    return (
+      this.match.describe() +
+      `<div class="dim">Online · ${this.channel.kind === 'p2p' ? 'direct connection' : 'relayed connection'}</div>` +
+      healthLine(this.pingMs, this.friendFps)
+    );
   }
 
   cameraTargetX(): number {

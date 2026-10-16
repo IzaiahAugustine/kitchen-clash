@@ -19,7 +19,7 @@ import { clampServer, type ServeSetup } from '../rules/serve';
 import type { Scoreboard } from '../ui/scoreboard';
 import type { Channel } from './channel';
 import { decodePlan, encodePlan, type SwingDesc } from './onlineHost';
-import { netStats } from './stats';
+import { healthLine, netStats } from './stats';
 
 /** How often we send our position (per second). */
 const INPUT_RATE = { p2p: 30, relay: 20, loopback: 30 };
@@ -120,6 +120,7 @@ export class OnlineGuest implements GameMode {
 
   private gotHello = false;
   private lastSnapAt = -Infinity;
+  private friendFps: number | null = null;
   private drawnFrom = new Vector3();
   /** The host's next shot, known before it happens (their swing is sent at the press). */
   private hostShot: { at: number; flight: number; swing: Swing } | null = null;
@@ -260,6 +261,7 @@ export class OnlineGuest implements GameMode {
     if ((m.h as number) <= this.lastSnapAt) return;
     this.lastSnapAt = m.h as number;
     netStats.snaps++;
+    if (typeof m.fp === 'number') this.friendFps = m.fp;
     // We just hit the ball ourselves: snapshots from before the host saw that hit would pull
     // the ball back onto its old path. Use them for the host's position only.
     if ((m.f as number) < this.predictedFlight && this.now < this.predictUntil) {
@@ -367,7 +369,7 @@ export class OnlineGuest implements GameMode {
     this.sinceInput += dt;
     if (this.sinceInput >= 1 / INPUT_RATE[this.channel.kind]) {
       this.sinceInput = 0;
-      this.channel.send({ t: 'in', x: me.pos.x, z: me.pos.z, vx: me.vel.x, vz: me.vel.z, lag: this.rtt / 2 }, false);
+      this.channel.send({ t: 'in', x: me.pos.x, z: me.pos.z, vx: me.vel.x, vz: me.vel.z, lag: this.rtt / 2, fp: Math.round(netStats.fps) }, false);
     }
 
     this.placeHost(time);
@@ -516,7 +518,8 @@ export class OnlineGuest implements GameMode {
       ${yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = spin</div>' : ''}
       <hr/>
       <div>Last shot: ${this.lastShot}</div>
-      <div class="dim">Online · ${this.channel.kind === 'p2p' ? 'direct connection' : 'relayed connection'} · ping ${Math.round(this.rtt * 1000)} ms</div>`;
+      <div class="dim">Online · ${this.channel.kind === 'p2p' ? 'direct connection' : 'relayed connection'}</div>
+      ${healthLine(this.haveOffset ? this.rtt * 1000 : null, this.friendFps)}`;
   }
 
   cameraTargetX(): number {

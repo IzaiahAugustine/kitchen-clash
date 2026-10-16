@@ -86,6 +86,8 @@ export class Game {
   private touch: TouchControls | null = null;
   private venues: VenueDresser | null = null;
   private venueId: VenueId | null = null;
+  private fpsFrom = 0;
+  private fpsFrames = 0;
   /** The online room while in an online match (or waiting for a friend). */
   private room: Room | null = null;
   private current:
@@ -809,6 +811,11 @@ export class Game {
   private frame(): void {
     const now = performance.now();
     netStats.frames++;
+    if (now - this.fpsFrom >= 1000) {
+      netStats.fps = ((netStats.frames - this.fpsFrames) * 1000) / (now - this.fpsFrom);
+      this.fpsFrom = now;
+      this.fpsFrames = netStats.frames;
+    }
     // Online, a hitch on one computer must not slow the shared match down, so catch up more.
     const dt = Math.min((now - this.lastFrameAt) / 1000, this.mode?.online ? 0.25 : 0.1);
     this.lastFrameAt = now;
