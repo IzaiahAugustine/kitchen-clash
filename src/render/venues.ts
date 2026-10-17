@@ -29,7 +29,7 @@ export const VENUES: Record<VenueId, Venue> = {
     id: 'park',
     name: 'City Park',
     sky: ['#4fb8ff', '#9edfff', '#dff6ff'],
-    fog: [0xcdeeff, 150, 340],
+    fog: [0xeef4f9, 150, 340],
     hemi: [0xdcefff, 0x5f8f4a, 0.9],
     sun: { color: 0xfff1dc, intensity: 2.6, pos: [-30, 70, 30] },
     exposure: 1.05,
@@ -42,14 +42,14 @@ export const VENUES: Record<VenueId, Venue> = {
     id: 'beach',
     name: 'Sunset Beach',
     sky: ['#ff8a5c', '#ffc38b', '#ffe9c9'],
-    fog: [0xffd9b0, 120, 360],
+    fog: [0xfbead8, 120, 360],
     hemi: [0xffe2c4, 0xc9a46b, 1.0],
     sun: { color: 0xffc58f, intensity: 2.4, pos: [-70, 30, -50] },
     exposure: 1.05,
     env: 0.45,
     colors: { court: '#1f8a9e', kitchen: '#f2a65a', surround: '#2bb3a3', ground: '#ecd7a2', windscreen: '#ffe9c9' },
     hideNature: true,
-    daySky: { turbidity: 6, rayleigh: 2.2, clouds: 0.3 },
+    daySky: { turbidity: 3.2, rayleigh: 1.6, clouds: 0.3 },
   },
   gym: {
     id: 'gym',
@@ -88,6 +88,8 @@ export class VenueDresser {
   private meshes = new Map<string, THREE.Mesh[]>();
   private sky: Sky | null = null;
   private chainLink: THREE.Object3D | null = null;
+  /** Ground reaching out to the horizon, past the edge of the modeled area. */
+  private horizon: THREE.Mesh;
   private envs = new Map<VenueId, THREE.Texture>();
 
   constructor(
@@ -97,6 +99,13 @@ export class VenueDresser {
     private sun: THREE.DirectionalLight,
     private renderer: THREE.WebGLRenderer,
   ) {
+    this.horizon = new THREE.Mesh(
+      new THREE.CircleGeometry(900, 48).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ roughness: 1 }),
+    );
+    this.horizon.position.y = -0.08;
+    this.horizon.receiveShadow = true;
+    scene.add(this.horizon);
     court.traverse((o) => {
       if (o.name === 'fence_chainlink') this.chainLink = o;
       const m = o as THREE.Mesh;
@@ -119,6 +128,8 @@ export class VenueDresser {
     color('ol_windscreen', v.colors.windscreen);
     for (const key of ['ol_tree', 'ol_hill']) for (const m of this.meshes.get(key) ?? []) m.visible = !v.hideNature;
     if (this.chainLink) this.chainLink.visible = v.id !== 'gym';
+    this.horizon.visible = v.id !== 'gym';
+    (this.horizon.material as THREE.MeshStandardMaterial).color.set(v.colors.ground).multiplyScalar(0.92);
     // Sand and a gym floor read better without the grass blades.
     for (const m of this.meshes.get('flat_ground') ?? []) {
       const mat = m.material as THREE.MeshStandardMaterial;
@@ -188,6 +199,7 @@ export class VenueDresser {
     }
     if (!this.sky) {
       this.sky = new Sky();
+      dimSky(this.sky);
       // A box: keep its corners inside the camera's far plane (600).
       this.sky.scale.setScalar(320);
       this.sky.frustumCulled = false;
@@ -207,6 +219,7 @@ export class VenueDresser {
     this.scene.environment = this.env(v.id, () => {
       const s = new THREE.Scene();
       const copy = new Sky();
+      dimSky(copy);
       copy.scale.setScalar(100);
       for (const k of Object.keys(u)) copy.material.uniforms[k].value = u[k].value;
       copy.material.uniforms.showSunDisc.value = 0;
@@ -231,6 +244,17 @@ export class VenueDresser {
   update(time: number): void {
     if (this.sky?.visible) this.sky.material.uniforms.time.value = time;
   }
+}
+
+/**
+ * The sky model's brightness is meant for a much darker camera exposure than this game uses;
+ * scale it down so the sky stays blue instead of washing out to white.
+ */
+function dimSky(sky: Sky): void {
+  const m = sky.material;
+  m.uniforms.skyGain = { value: 0.42 };
+  m.fragmentShader = 'uniform float skyGain;\n' + m.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', 'gl_FragColor = vec4( texColor * skyGain, 1.0 );');
+  m.needsUpdate = true;
 }
 
 function skyTexture([top, mid, bottom]: [string, string, string]): THREE.CanvasTexture {
@@ -261,25 +285,88 @@ function solid(geo: THREE.BufferGeometry, color: string, params: THREE.MeshStand
 function beachProps(): THREE.Group {
   const g = new THREE.Group();
   const sea = new THREE.Mesh(
-    new THREE.PlaneGeometry(900, 300).rotateX(-Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: '#2fb0d8', roughness: 0.25, metalness: 0.1 }),
+    new THREE.PlaneGeometry(1800, 700).rotateX(-Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: '#2a9fc8', roughness: 0.12, metalness: 0.2 }),
   );
-  sea.position.set(0, 0.02, -210);
+  sea.position.set(0, 0.02, -410);
   g.add(sea);
   const spots: [number, number][] = [[-30, -40], [30, -44], [-36, 6], [34, 10], [-48, -70], [52, -64], [-26, 26], [40, -12]];
-  spots.forEach(([x, z], i) => {
-    const lean = (i % 2 ? 1 : -1) * 0.18;
-    const trunk = solid(new THREE.CylinderGeometry(0.4, 0.6, 14, 8).translate(0, 7, 0), '#9b6b3c', { roughness: 1 });
-    trunk.position.set(x, 0, z);
-    trunk.rotation.z = lean;
-    g.add(trunk);
-    for (let k = 0; k < 6; k++) {
-      const frond = solid(new THREE.ConeGeometry(0.9, 6.5, 5).rotateZ(Math.PI / 2).translate(3, 0, 0), '#3f9a4a', { roughness: 0.9 });
-      frond.position.set(x - Math.sin(lean) * 14, 13.6, z);
-      frond.rotation.set(0, (k / 6) * Math.PI * 2, -0.5);
-      g.add(frond);
+  spots.forEach(([x, z], i) => g.add(palm(x, z, i)));
+  return g;
+}
+
+/**
+ * A palm: a curved, tapering trunk with growth rings, a crown of long drooping fronds (flat
+ * leaves with a center fold) and a few coconuts.
+ */
+function palm(x: number, z: number, seed: number): THREE.Group {
+  const g = new THREE.Group();
+  const lean = (seed % 2 ? 1 : -1) * (0.12 + (seed % 3) * 0.05);
+  const height = 13 + (seed % 4);
+  const bark = surfaceMaterial('#8a6a48', { roughness: 1 });
+  const ring = surfaceMaterial('#6e5238', { roughness: 1 });
+  const segs = 7;
+  let top = new THREE.Vector3(0, 0, 0);
+  for (let k = 0; k < segs; k++) {
+    const t0 = k / segs;
+    const t1 = (k + 1) / segs;
+    // The lean grows toward the top, so the trunk curves.
+    const p0 = new THREE.Vector3(Math.sin(lean * t0 * 2) * height * 0.35 * t0, t0 * height, 0);
+    const p1 = new THREE.Vector3(Math.sin(lean * t1 * 2) * height * 0.35 * t1, t1 * height, 0);
+    const len = p0.distanceTo(p1);
+    const r0 = 0.55 - t0 * 0.22;
+    const r1 = 0.55 - t1 * 0.22;
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0 * 1.04, len, 10), bark);
+    seg.position.copy(p0).lerp(p1, 0.5);
+    seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
+    seg.castShadow = true;
+    g.add(seg);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(r0 * 1.02, 0.06, 4, 12).rotateX(Math.PI / 2), ring);
+    band.position.copy(p0);
+    band.quaternion.copy(seg.quaternion);
+    g.add(band);
+    top = p1;
+  }
+  // Frond: a long leaf, wide in the middle, folded along its spine, drooping toward the tip.
+  const frondGeo = (() => {
+    const len = 7.5;
+    const n = 10;
+    const pts: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const w = Math.sin(Math.PI * Math.min(1, t * 1.15)) * 1.1 + 0.05;
+      const droop = -t * t * 3.2;
+      pts.push(t * len, droop, 0, t * len, droop - w * 0.25, w, t * len, droop - w * 0.25, -w);
+      if (i < n) {
+        const a = i * 3;
+        const b = a + 3;
+        idx.push(a, b, a + 1, a + 1, b, b + 1, a, a + 2, b, a + 2, b + 2, b);
+      }
     }
-  });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
+  })();
+  const greens = ['#3f8f3a', '#4f9d40', '#357f34'];
+  for (let k = 0; k < 9; k++) {
+    const leaf = new THREE.Mesh(frondGeo, surfaceMaterial(greens[k % 3], { roughness: 0.8, side: THREE.DoubleSide }));
+    leaf.position.copy(top);
+    leaf.rotation.set(0, (k / 9) * Math.PI * 2 + seed, 0.35 + (k % 3) * 0.12);
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  const nut = new THREE.SphereGeometry(0.32, 8, 6);
+  for (let k = 0; k < 3; k++) {
+    const c = new THREE.Mesh(nut, surfaceMaterial('#5a4026', { roughness: 0.7 }));
+    const a = (k / 3) * Math.PI * 2;
+    c.position.set(top.x + Math.cos(a) * 0.45, top.y - 0.45, Math.sin(a) * 0.45);
+    g.add(c);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = seed * 1.3;
   return g;
 }
 

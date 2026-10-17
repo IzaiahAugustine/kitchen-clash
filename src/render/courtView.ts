@@ -21,7 +21,10 @@ const SURFACES: [string, () => THREE.MeshStandardMaterialParameters][] = [
   ['ol_bleachers', () => ({ roughness: 0.35, metalness: 0.75 })],
   ['ol_tree_trunks', () => ({ roughness: 1 })],
   ['ol_tree', () => ({ roughness: 0.9 })],
-  ['ol_hill', () => ({ roughness: 1 })],
+  ['ol_hill', () => {
+    const map = grass();
+    return { map, bumpMap: map, bumpScale: 1.2, roughness: 1 };
+  }],
 ];
 
 function speckled(roughness: number): THREE.MeshStandardMaterialParameters {
@@ -30,7 +33,7 @@ function speckled(roughness: number): THREE.MeshStandardMaterialParameters {
 }
 
 /** How many feet one texture repeat covers on the flat surfaces. */
-const TILE_FEET: Record<string, number> = { flat_ground: 20, flat_court: 6, flat_kitchen: 6, flat_surround: 6 };
+const TILE_FEET: Record<string, number> = { ol_hill: 20, flat_ground: 20, flat_court: 6, flat_kitchen: 6, flat_surround: 6 };
 
 /**
  * Loads the Blender-built court (public/models/court.glb) and dresses it: textured court and
@@ -64,6 +67,8 @@ export async function loadCourt(scene: THREE.Scene, maxAnisotropy = 8): Promise<
     if (params.map) params.map.anisotropy = maxAnisotropy;
     // Printed textures carry their own color.
     if (name.startsWith('ol_windscreen')) color.set(0xffffff);
+    // Hills: a deeper, less lime green, like the lawn.
+    if (name.startsWith('ol_hill')) color.multiplyScalar(0.72);
     mesh.material = surfaceMaterial(color, {
       ...params,
       side: name.includes('tape') ? THREE.DoubleSide : THREE.FrontSide,
@@ -117,8 +122,8 @@ const SCREEN_H = 4;
 const FENCE_TOP = 10;
 
 /**
- * Chain-link fence above the windscreens on the far end and both sides, with posts and a top
- * rail. The near end stays open so it never blocks the camera.
+ * Chain-link fence above the windscreens all the way round, with posts and a top rail. The
+ * end panel behind the camera is hidden each frame (see hideFenceBehind) so it never blocks play.
  */
 function fenceAbove(): THREE.Group {
   const g = new THREE.Group();
@@ -126,7 +131,7 @@ function fenceAbove(): THREE.Group {
   const h = FENCE_TOP - SCREEN_H;
   const tex = chainLink();
   const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.6 });
-  const panel = (len: number, x: number, z: number, rotY: number) => {
+  const panel = (len: number, x: number, z: number, rotY: number, name = '') => {
     const t = tex.clone();
     t.repeat.set(len * 1.2, h * 1.2);
     t.needsUpdate = true;
@@ -136,9 +141,13 @@ function fenceAbove(): THREE.Group {
     m.rotation.y = rotY;
     m.castShadow = true;
     m.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: t, alphaTest: 0.35 });
+    m.name = name;
     g.add(m);
+    return m;
   };
-  panel(2 * FENCE_X, 0, -FENCE_Z, 0);
+  // The end panels are named so the game can drop whichever one the camera is behind.
+  panel(2 * FENCE_X, 0, -FENCE_Z, 0, 'fence_end_far');
+  panel(2 * FENCE_X, 0, FENCE_Z, 0, 'fence_end_near');
   panel(2 * FENCE_Z, -FENCE_X, 0, Math.PI / 2);
   panel(2 * FENCE_Z, FENCE_X, 0, Math.PI / 2);
 
@@ -149,16 +158,20 @@ function fenceAbove(): THREE.Group {
     p.position.set(x, 0, z);
     p.castShadow = true;
     g.add(p);
+    return p;
   };
   for (let i = 0; i <= 4; i++) add(-FENCE_X + (i * 2 * FENCE_X) / 4, -FENCE_Z);
+  for (let i = 1; i < 4; i++) add(-FENCE_X + (i * 2 * FENCE_X) / 4, FENCE_Z).name = 'fence_end_near_post';
   for (let i = 1; i <= 8; i++) for (const x of [-FENCE_X, FENCE_X]) add(x, -FENCE_Z + (i * 2 * FENCE_Z) / 8);
   const rail = (len: number, x: number, z: number, rotY: number) => {
     const r = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, len, 6).rotateZ(Math.PI / 2), metal);
     r.position.set(x, FENCE_TOP, z);
     r.rotation.y = rotY;
     g.add(r);
+    return r;
   };
   rail(2 * FENCE_X, 0, -FENCE_Z, 0);
+  rail(2 * FENCE_X, 0, FENCE_Z, 0).name = 'fence_end_near_rail';
   rail(2 * FENCE_Z, -FENCE_X, 0, Math.PI / 2);
   rail(2 * FENCE_Z, FENCE_X, 0, Math.PI / 2);
   return g;
@@ -179,4 +192,19 @@ function netMaterial(color: THREE.Color): THREE.MeshStandardMaterial {
   tex.repeat.set(2.6, 2.6); // UVs are in feet → ~4.6" cells
   tex.anisotropy = 8;
   return new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.9 });
+}
+
+/**
+ * Hides the fence along whichever end the camera is behind or close to (it would fill the
+ * screen), and shows it otherwise (title fly-around, the other end).
+ */
+export function hideFenceBehind(court: THREE.Object3D, camera: THREE.Camera): void {
+  let ends = court.userData.fenceEnds as THREE.Object3D[] | undefined;
+  if (!ends) {
+    ends = [];
+    court.traverse((o) => o.name.startsWith('fence_end') && ends!.push(o));
+    court.userData.fenceEnds = ends;
+  }
+  const z = camera.position.z;
+  for (const o of ends) o.visible = o.name.startsWith('fence_end_near') ? z < FENCE_Z - 4 : z > -FENCE_Z + 4;
 }

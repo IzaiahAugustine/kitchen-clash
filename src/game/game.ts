@@ -11,7 +11,7 @@ import { Ball, type BallEvent } from '../physics/ball';
 import { PHYS } from '../physics/constants';
 import { loadPlayerTemplate } from '../players/playerView';
 import { BallView } from '../render/ballView';
-import { loadCourt } from '../render/courtView';
+import { hideFenceBehind, loadCourt } from '../render/courtView';
 import { Crowd } from '../render/crowd';
 import { Effects } from '../render/effects';
 import { Stage } from '../render/stage';
@@ -89,6 +89,7 @@ export class Game {
   private venueId: VenueId | null = null;
   private coach: Coach;
   private crowdTick = false;
+  private court: THREE.Object3D | null = null;
   /** Seconds since this match (or resume) began, for the control hints. */
   private matchClock = 0;
   private fpsFrom = 0;
@@ -178,6 +179,7 @@ export class Game {
       lab ? null : loadPlayerTemplate(),
     ]);
     this.template = template;
+    this.court = court;
     this.venues = new VenueDresser(this.stage.scene, court, this.stage.hemi, this.stage.sun, this.stage.renderer);
     // Debug: `?court=beach` picks the court for this session.
     const court0 = debugFlag('court');
@@ -924,6 +926,7 @@ export class Game {
     else this.cam.update(dt, mode.cameraTargetX(), mode.cameraSide?.() ?? 1);
 
     // The full info panel is for development; players get one short line at most.
+    if (this.court) hideFenceBehind(this.court, this.cam.camera);
     hud.setPanel(hasDebugFlag('debug') ? mode.describe() + this.statusLine() : mode.cornerText?.() ?? '');
     this.updateCoach(dt);
   }
