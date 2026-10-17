@@ -1,8 +1,9 @@
 /**
  * Sound effects and music with the Web Audio API.
  *
- * Each sound first tries a file in public/audio/<name>.(mp3|wav|m4a|ogg|aac) — drop Artlist
- * downloads there — and falls back to a synthesized version so the game is never silent.
+ * Each sound first tries files in public/audio: <name>_1, <name>_2… (variations, one picked at
+ * random each time) or plain <name>, as .mp3/.wav/.m4a/.ogg/.aac. Without a file it falls back
+ * to a synthesized version so the game is never silent.
  * Music only plays from a file (public/audio/music.*).
  */
 
@@ -24,7 +25,8 @@ export class Sound {
   private sfxGain!: GainNode;
   private musicGain!: GainNode;
   private ambienceGain!: GainNode;
-  private buffers = new Map<string, AudioBuffer>();
+  private buffers = new Map<string, AudioBuffer[]>();
+  private applause: AudioBuffer | null = null;
   private noise: AudioBuffer | null = null;
   private music: AudioBufferSourceNode | null = null;
   private ambience: AudioBufferSourceNode | null = null;
@@ -77,7 +79,8 @@ export class Sound {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
     const out = this.routeTo(opts.pan ?? 0, opts.volume ?? 1);
-    const file = this.buffers.get(name);
+    const files = this.buffers.get(name);
+    const file = files?.[Math.floor(Math.random() * files.length)];
     if (file) {
       const src = ctx.createBufferSource();
       src.buffer = file;
@@ -108,6 +111,7 @@ export class Sound {
     this.ambienceGain.gain.value = 0;
     this.ambienceGain.connect(this.sfxGain);
     this.noise = this.makeNoise(ctx);
+    this.applause = this.makeApplause(ctx);
     void this.loadFiles();
     this.startSynthAmbience();
     this.applyMusicLevel();
@@ -115,22 +119,33 @@ export class Sound {
   }
 
   private async loadFiles(): Promise<void> {
+    const load = async (file: string): Promise<AudioBuffer | null> => {
+      for (const ext of EXTENSIONS) {
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}audio/${file}.${ext}`);
+          // Dev servers answer missing files with the HTML page; only accept real audio.
+          if (!res.ok || (res.headers.get('content-type') ?? '').includes('text/html')) continue;
+          return await this.ctx!.decodeAudioData(await res.arrayBuffer());
+        } catch {
+          // try the next extension
+        }
+      }
+      return null;
+    };
     await Promise.all(
       FILE_SOUNDS.map(async (name) => {
-        for (const ext of EXTENSIONS) {
-          try {
-            const res = await fetch(`${import.meta.env.BASE_URL}audio/${name}.${ext}`);
-            // Dev servers answer missing files with the HTML page; only accept real audio.
-            if (!res.ok || (res.headers.get('content-type') ?? '').includes('text/html')) continue;
-            const buf = await this.ctx!.decodeAudioData(await res.arrayBuffer());
-            this.buffers.set(name, buf);
-            if (name === 'music') this.startMusic();
-            if (name === 'crowd') this.startFileAmbience(buf);
-            return;
-          } catch {
-            // try the next extension
-          }
+        const single = await load(name);
+        const list = single ? [single] : [];
+        // Numbered variations: name_1, name_2, … until one is missing.
+        for (let i = 1; !single && i <= 8; i++) {
+          const b = await load(`${name}_${i}`);
+          if (!b) break;
+          list.push(b);
         }
+        if (!list.length) return;
+        this.buffers.set(name, list);
+        if (name === 'music') this.startMusic();
+        if (name === 'crowd') this.startFileAmbience(list[0]);
       }),
     );
   }
@@ -142,7 +157,7 @@ export class Sound {
 
   private startMusic(): void {
     const ctx = this.ctx!;
-    const buf = this.buffers.get('music');
+    const buf = this.buffers.get('music')?.[0];
     if (!buf || this.music) return;
     this.music = ctx.createBufferSource();
     this.music.buffer = buf;
@@ -176,6 +191,41 @@ export class Sound {
     src.connect(band).connect(level).connect(this.ambienceGain);
     src.start();
     this.ambience = src;
+  }
+
+  /**
+   * Applause built from hundreds of single claps (each a tiny burst of filtered noise at its own
+   * pitch), swelling in and tapering off — much more like a real crowd than one noise swell.
+   */
+  private makeApplause(ctx: AudioContext): AudioBuffer {
+    const rate = ctx.sampleRate;
+    const len = Math.floor(rate * 2.6);
+    const buf = ctx.createBuffer(2, len, rate);
+    const L = buf.getChannelData(0);
+    const R = buf.getChannelData(1);
+    for (let k = 0; k < 520; k++) {
+      // Most claps land in the first second; a few stragglers after.
+      const at = Math.floor(Math.pow(Math.random(), 1.6) * 2.3 * rate);
+      const dur = Math.floor((0.004 + Math.random() * 0.01) * rate);
+      const swell = Math.min(1, at / (0.18 * rate)) * (1 - (at / len) * 0.75);
+      const amp = (0.25 + Math.random() * 0.75) * swell * 0.16;
+      const pan = Math.random();
+      // A clap is a click resonating in cupped hands: noise through a quick resonant filter.
+      const f = (900 + Math.random() * 1800) / rate;
+      const r = 0.93;
+      const c1 = 2 * r * Math.cos(2 * Math.PI * f);
+      let y1 = 0;
+      let y2 = 0;
+      for (let i = 0; i < dur * 3 && at + i < len; i++) {
+        const x = i < dur ? (Math.random() * 2 - 1) * (1 - i / dur) : 0;
+        const y = x + c1 * y1 - r * r * y2;
+        y2 = y1;
+        y1 = y;
+        L[at + i] += y * amp * (1 - pan) * 0.5;
+        R[at + i] += y * amp * pan * 0.5;
+      }
+    }
+    return buf;
   }
 
   private makeNoise(ctx: AudioContext): AudioBuffer {
@@ -247,37 +297,28 @@ export class Sound {
         tone('square', 900, 1300, 0.04, 0.25);
         break;
       case 'cheer': {
-        // a swell of crowd noise with ragged claps
+        // applause, over a soft swell of voices
+        if (this.applause) {
+          const a = ctx.createBufferSource();
+          a.buffer = this.applause;
+          a.playbackRate.value = 0.95 + Math.random() * 0.1;
+          a.connect(out);
+          a.start(t);
+        }
         const src = ctx.createBufferSource();
         src.buffer = this.noise;
         src.loop = true;
         const f = ctx.createBiquadFilter();
         f.type = 'bandpass';
-        f.frequency.value = 1300;
-        f.Q.value = 0.5;
+        f.frequency.value = 650;
+        f.Q.value = 0.8;
         const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.7, t + 0.25);
-        g.gain.setValueAtTime(0.7, t + 0.8);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+        g.gain.exponentialRampToValueAtTime(0.22, t + 0.3);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
         src.connect(f).connect(g).connect(out);
         src.start(t);
-        src.stop(t + 2.3);
-        for (let i = 0; i < 14; i++) {
-          const c = ctx.createBufferSource();
-          c.buffer = this.noise;
-          const cf = ctx.createBiquadFilter();
-          cf.type = 'highpass';
-          cf.frequency.value = 1500;
-          const cg = ctx.createGain();
-          const ct = t + 0.1 + Math.random() * 1.6;
-          cg.gain.setValueAtTime(0.0001, ct);
-          cg.gain.exponentialRampToValueAtTime(0.25, ct + 0.005);
-          cg.gain.exponentialRampToValueAtTime(0.0001, ct + 0.05);
-          c.connect(cf).connect(cg).connect(out);
-          c.start(ct, Math.random());
-          c.stop(ct + 0.08);
-        }
+        src.stop(t + 2.1);
         break;
       }
     }

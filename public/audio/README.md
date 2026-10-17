@@ -12,3 +12,10 @@ Until a file is present, the game plays a synthesized version.
 | `crowd` | Background crowd murmur (loops) | Tennis Crowd - Fans Waiting To Enter Stadium, Walla (Alexander Gastrell) |
 | `click` | Menu click | Graphix - Snappy Button Click, Short (Cinemear) |
 | `music` | Menu music (loops) | Generated with Artlist |
+
+## In use now
+
+`paddle_1`–`paddle_5`, `bounce_1`–`bounce_5`, `net` and `click` are from Kenney's
+[Impact Sounds](https://kenney.nl/assets/impact-sounds) and [Interface Sounds](https://kenney.nl/assets/interface-sounds)
+(CC0, free for any use). Numbered files are variations; the game picks one at random each time.
+Crowd and applause are still synthesized (see `src/audio/sound.ts`).

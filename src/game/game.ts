@@ -949,7 +949,7 @@ export class Game {
     }
     this.sound.play('paddle', {
       volume: this.spatial(b.pos) * (0.45 + 0.55 * power),
-      pitch: 0.92 + Math.random() * 0.16 + power * 0.08,
+      pitch: 1.04 + Math.random() * 0.14 + power * 0.1,
       pan: b.pos.x / 14,
     });
   }
