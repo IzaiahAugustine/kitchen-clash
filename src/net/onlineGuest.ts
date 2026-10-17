@@ -234,7 +234,6 @@ export class OnlineGuest implements GameMode {
     const shots = m.shots as number;
     const excitement = Math.min(1, 0.35 + shots / 14 + (youLost ? 0 : 0.3));
     this.w.crowd?.cheer(excitement);
-    this.w.audio?.play('cheer', { volume: 0.25 + 0.55 * excitement });
     this.phase = 'pointOver';
   }
 

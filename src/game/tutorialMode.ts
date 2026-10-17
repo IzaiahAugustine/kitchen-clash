@@ -225,7 +225,6 @@ export class TutorialMode implements GameMode {
     if (this.progress >= this.current.goal) {
       this.w.hud.flash('Step complete!', 'good', 1100);
       this.w.crowd?.cheer(0.6);
-      this.w.audio?.play('cheer', { volume: 0.35 });
       this.status = 'between';
       this.timer = 1.3;
       this.advanceIn = 1.2;

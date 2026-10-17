@@ -602,7 +602,6 @@ export class Game {
     this.world.hud.muted = false;
     this.scoreboard.setVisible(this.mode instanceof MatchMode);
     this.sound.setMusic(false);
-    this.sound.setAmbience(true);
   }
 
   /** Title screen, with a CPU match playing behind it. */
@@ -615,7 +614,6 @@ export class Game {
     this.world.hud.muted = true;
     this.scoreboard.setVisible(false);
     this.sound.setMusic(true);
-    this.sound.setAmbience(true);
     const s = this.settings;
     this.menu.show({
       variant: 'title',

@@ -859,7 +859,6 @@ export class MatchMode implements GameMode {
     // The crowd reacts more to long rallies and to your points.
     const excitement = Math.min(1, 0.35 + shots / 14 + (humanWon ? 0.3 : 0));
     this.w.crowd?.cheer(excitement);
-    this.w.audio?.play('cheer', { volume: 0.25 + 0.55 * excitement });
 
     const servingBefore = this.score.servingTeam;
     const outcome = this.score.rallyWonBy(winner);

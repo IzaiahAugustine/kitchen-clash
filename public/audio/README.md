@@ -8,8 +8,8 @@ Until a file is present, the game plays a synthesized version.
 | `paddle` | Paddle hitting the ball | Racket Sports - Ping Pong Paddle Hits Ball (Fusehive) |
 | `bounce` | Ball bouncing on the court | Racket Games - Tennis Ball, Two Short Hits (Alberto Sueri) |
 | `net` | Ball hitting the net | Racket Games - Tennis Ball, Hitting Net, Rustle, Ring (Alberto Sueri) |
-| `cheer` | Crowd reacting to a point | Energetic Crowds - Small Audience, Applause (BOOM Library) |
-| `crowd` | Background crowd murmur (loops) | Tennis Crowd - Fans Waiting To Enter Stadium, Walla (Alexander Gastrell) |
+
+
 | `click` | Menu click | Graphix - Snappy Button Click, Short (Cinemear) |
 | `music` | Menu music (loops) | Generated with Artlist |
 
@@ -18,4 +18,3 @@ Until a file is present, the game plays a synthesized version.
 `paddle_1`–`paddle_5`, `bounce_1`–`bounce_5`, `net` and `click` are from Kenney's
 [Impact Sounds](https://kenney.nl/assets/impact-sounds) and [Interface Sounds](https://kenney.nl/assets/interface-sounds)
 (CC0, free for any use). Numbered files are variations; the game picks one at random each time.
-Crowd and applause are still synthesized (see `src/audio/sound.ts`).

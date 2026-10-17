@@ -7,8 +7,8 @@
  * Music only plays from a file (public/audio/music.*).
  */
 
-export type SoundName = 'paddle' | 'bounce' | 'net' | 'cheer' | 'click';
-const FILE_SOUNDS: (SoundName | 'crowd' | 'music')[] = ['paddle', 'bounce', 'net', 'cheer', 'click', 'crowd', 'music'];
+export type SoundName = 'paddle' | 'bounce' | 'net' | 'click';
+const FILE_SOUNDS: (SoundName | 'music')[] = ['paddle', 'bounce', 'net', 'click', 'music'];
 const EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg', 'aac'];
 
 export interface PlayOptions {
@@ -24,16 +24,12 @@ export class Sound {
   private ctx: AudioContext | null = null;
   private sfxGain!: GainNode;
   private musicGain!: GainNode;
-  private ambienceGain!: GainNode;
   private buffers = new Map<string, AudioBuffer[]>();
-  private applause: AudioBuffer | null = null;
   private noise: AudioBuffer | null = null;
   private music: AudioBufferSourceNode | null = null;
-  private ambience: AudioBufferSourceNode | null = null;
   private sfxLevel = 0.8;
   private musicLevel = 0.6;
   private wantMusic = true;
-  private wantAmbience = false;
   private master: GainNode | null = null;
   private muted = false;
 
@@ -68,13 +64,6 @@ export class Sound {
     this.applyMusicLevel();
   }
 
-  /** Background crowd murmur on/off (fades). */
-  setAmbience(on: boolean): void {
-    this.wantAmbience = on;
-    if (!this.ctx) return;
-    this.ambienceGain.gain.setTargetAtTime(on ? 0.18 * this.sfxLevel : 0, this.ctx.currentTime, 0.6);
-  }
-
   play(name: SoundName, opts: PlayOptions = {}): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
@@ -107,15 +96,9 @@ export class Sound {
     this.musicGain = ctx.createGain();
     this.musicGain.gain.value = 0;
     this.musicGain.connect(this.master);
-    this.ambienceGain = ctx.createGain();
-    this.ambienceGain.gain.value = 0;
-    this.ambienceGain.connect(this.sfxGain);
     this.noise = this.makeNoise(ctx);
-    this.applause = this.makeApplause(ctx);
     void this.loadFiles();
-    this.startSynthAmbience();
     this.applyMusicLevel();
-    this.setAmbience(this.wantAmbience);
   }
 
   private async loadFiles(): Promise<void> {
@@ -145,7 +128,6 @@ export class Sound {
         if (!list.length) return;
         this.buffers.set(name, list);
         if (name === 'music') this.startMusic();
-        if (name === 'crowd') this.startFileAmbience(list[0]);
       }),
     );
   }
@@ -164,68 +146,6 @@ export class Sound {
     this.music.loop = true;
     this.music.connect(this.musicGain);
     this.music.start();
-  }
-
-  private startFileAmbience(buf: AudioBuffer): void {
-    const ctx = this.ctx!;
-    this.ambience?.stop();
-    this.ambience = ctx.createBufferSource();
-    this.ambience.buffer = buf;
-    this.ambience.loop = true;
-    this.ambience.connect(this.ambienceGain);
-    this.ambience.start();
-  }
-
-  /** Soft crowd murmur from filtered noise, until a crowd recording is provided. */
-  private startSynthAmbience(): void {
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.loop = true;
-    const band = ctx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.value = 500;
-    band.Q.value = 0.6;
-    const level = ctx.createGain();
-    level.gain.value = 0.35;
-    src.connect(band).connect(level).connect(this.ambienceGain);
-    src.start();
-    this.ambience = src;
-  }
-
-  /**
-   * Applause built from hundreds of single claps (each a tiny burst of filtered noise at its own
-   * pitch), swelling in and tapering off — much more like a real crowd than one noise swell.
-   */
-  private makeApplause(ctx: AudioContext): AudioBuffer {
-    const rate = ctx.sampleRate;
-    const len = Math.floor(rate * 2.6);
-    const buf = ctx.createBuffer(2, len, rate);
-    const L = buf.getChannelData(0);
-    const R = buf.getChannelData(1);
-    for (let k = 0; k < 520; k++) {
-      // Most claps land in the first second; a few stragglers after.
-      const at = Math.floor(Math.pow(Math.random(), 1.6) * 2.3 * rate);
-      const dur = Math.floor((0.004 + Math.random() * 0.01) * rate);
-      const swell = Math.min(1, at / (0.18 * rate)) * (1 - (at / len) * 0.75);
-      const amp = (0.25 + Math.random() * 0.75) * swell * 0.16;
-      const pan = Math.random();
-      // A clap is a click resonating in cupped hands: noise through a quick resonant filter.
-      const f = (900 + Math.random() * 1800) / rate;
-      const r = 0.93;
-      const c1 = 2 * r * Math.cos(2 * Math.PI * f);
-      let y1 = 0;
-      let y2 = 0;
-      for (let i = 0; i < dur * 3 && at + i < len; i++) {
-        const x = i < dur ? (Math.random() * 2 - 1) * (1 - i / dur) : 0;
-        const y = x + c1 * y1 - r * r * y2;
-        y2 = y1;
-        y1 = y;
-        L[at + i] += y * amp * (1 - pan) * 0.5;
-        R[at + i] += y * amp * pan * 0.5;
-      }
-    }
-    return buf;
   }
 
   private makeNoise(ctx: AudioContext): AudioBuffer {
@@ -296,31 +216,6 @@ export class Sound {
       case 'click':
         tone('square', 900, 1300, 0.04, 0.25);
         break;
-      case 'cheer': {
-        // applause, over a soft swell of voices
-        if (this.applause) {
-          const a = ctx.createBufferSource();
-          a.buffer = this.applause;
-          a.playbackRate.value = 0.95 + Math.random() * 0.1;
-          a.connect(out);
-          a.start(t);
-        }
-        const src = ctx.createBufferSource();
-        src.buffer = this.noise;
-        src.loop = true;
-        const f = ctx.createBiquadFilter();
-        f.type = 'bandpass';
-        f.frequency.value = 650;
-        f.Q.value = 0.8;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.22, t + 0.3);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
-        src.connect(f).connect(g).connect(out);
-        src.start(t);
-        src.stop(t + 2.1);
-        break;
-      }
     }
   }
 }
