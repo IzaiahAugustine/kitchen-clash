@@ -199,6 +199,10 @@ export class PracticeMode implements GameMode {
       <div>Last shot: ${this.lastShot}</div>`;
   }
 
+  cornerText(): string {
+    return `<span class="big">Rally ${this.rally}</span> <span class="dim">· Best ${this.best} · <b>Enter</b> feed</span>`;
+  }
+
   cameraTargetX(): number {
     return this.human.pos.x;
   }

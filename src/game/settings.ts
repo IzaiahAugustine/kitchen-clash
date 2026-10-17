@@ -31,6 +31,8 @@ export interface Settings {
   tourneyWins: number;
   /** Court for Play vs AI. */
   court: VenueId;
+  /** Seconds played in total (new players get the control hints for a while). */
+  playSeconds: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   unlocked: [],
   tourneyWins: 0,
   court: 'park',
+  playSeconds: 0,
 };
 
 const KEY = 'kitchen-clash-settings';

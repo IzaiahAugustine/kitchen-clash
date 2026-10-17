@@ -460,7 +460,11 @@ export class TutorialMode implements GameMode {
 
   describe(): string {
     return `<div class="title">Kitchen Clash <small>How to play</small></div>
-      <div class="dim"><b>N</b> Skip step · <b>Esc</b> Menu</div>`;
+      <div class="dim"><b>N</b> Skip step · <b>P</b> Menu</div>`;
+  }
+
+  cornerText(): string {
+    return '<span class="dim"><b>N</b> Skip step · <b>P</b> Menu</span>';
   }
 
   cameraTargetX(): number {

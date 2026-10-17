@@ -522,6 +522,14 @@ export class OnlineGuest implements GameMode {
       ${healthLine(this.haveOffset ? this.rtt * 1000 : null, this.friendFps)}`;
   }
 
+  cornerText(): string {
+    return healthLine(this.haveOffset ? this.rtt * 1000 : null, this.friendFps);
+  }
+
+  yourServe(): boolean {
+    return this.phase === 'preServe' && this.serverTeam === ME;
+  }
+
   cameraTargetX(): number {
     return this.me.pos.x;
   }

@@ -244,6 +244,14 @@ export class OnlineHost implements GameMode {
     );
   }
 
+  cornerText(): string {
+    return healthLine(this.pingMs, this.friendFps);
+  }
+
+  yourServe(): boolean {
+    return this.match.yourServe();
+  }
+
   cameraTargetX(): number {
     return this.match.cameraTargetX();
   }

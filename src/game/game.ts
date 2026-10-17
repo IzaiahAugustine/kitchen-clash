@@ -19,6 +19,7 @@ import { DEFAULT_SCORING } from '../rules/scoring';
 import { Hud } from '../ui/hud';
 import { Menu, type MenuScreen } from '../ui/menu';
 import { Scoreboard } from '../ui/scoreboard';
+import { Coach } from '../ui/coach';
 import { debugFlag, hasDebugFlag } from './debugFlags';
 import { MatchMode, type Controller, type MatchResult } from './matchMode';
 import type { GameMode, World } from './mode';
@@ -86,6 +87,9 @@ export class Game {
   private touch: TouchControls | null = null;
   private venues: VenueDresser | null = null;
   private venueId: VenueId | null = null;
+  private coach: Coach;
+  /** Seconds since this match (or resume) began, for the control hints. */
+  private matchClock = 0;
   private fpsFrom = 0;
   private fpsFrames = 0;
   /** The online room while in an online match (or waiting for a friend). */
@@ -139,6 +143,7 @@ export class Game {
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) return null;
       return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight };
     };
+    this.coach = new Coach(this.uiRoot);
     this.menu = new Menu(this.uiRoot);
     this.menu.onNavigate = () => this.sound.play('click', { volume: 0.5 });
     // Phones and tablets get on-screen controls (`?touch` forces them for testing).
@@ -204,6 +209,11 @@ export class Game {
       this.showTournament();
     } else if (debugFlag('difficulty') || hasDebugFlag('doubles')) {
       this.startMatch('human', parseDifficulty(debugFlag('difficulty')), hasDebugFlag('doubles'));
+    } else if (this.settings.playSeconds === 0 || portal.id === 'crazygames') {
+      // Land straight in a match (portals ask for this): new players face Easy, with key hints on screen.
+      const first = this.settings.playSeconds === 0;
+      this.startMatch('human', first ? 'easy' : this.settings.difficulty, first ? false : undefined);
+      this.world.hud.flash('First to 11!', 'info', 2200, 'Win by 2 · P for the menu');
     } else {
       this.showTitle();
     }
@@ -580,6 +590,7 @@ export class Game {
 
   private enterPlaying(): void {
     this.state = 'playing';
+    this.matchClock = 0;
     portal.gameplayStart();
     this.menu.hide();
     this.touch?.setVisible(true);
@@ -642,7 +653,7 @@ export class Game {
     const s = this.settings;
     this.menu.show({
       variant: 'title',
-      header: '<div class="menu-headline">Watch AI vs AI</div><div class="menu-sub">F fast-forwards · Esc for the menu</div>',
+      header: '<div class="menu-headline">Watch AI vs AI</div><div class="menu-sub">F fast-forwards · P for the menu</div>',
       items: [
         this.option('Mode', ['Singles', 'Doubles'], () => (s.format === 'doubles' ? 1 : 0), (i) => (s.format = i ? 'doubles' : 'singles')),
         this.option('Orange team', LEVELS.map(cap), () => LEVELS.indexOf(s.watchNear), (i) => (s.watchNear = LEVELS[i])),
@@ -907,7 +918,25 @@ export class Game {
     else if (this.state === 'title') this.cam.orbit(dt);
     else this.cam.update(dt, mode.cameraTargetX(), mode.cameraSide?.() ?? 1);
 
-    hud.setPanel(mode.describe() + this.statusLine());
+    // The full info panel is for development; players get one short line at most.
+    hud.setPanel(hasDebugFlag('debug') ? mode.describe() + this.statusLine() : mode.cornerText?.() ?? '');
+    this.updateCoach(dt);
+  }
+
+  /** Key-cap hints: the serve keys when it's your serve, all the controls while you're new. */
+  private updateCoach(dt: number): void {
+    const cur = this.current;
+    const human = cur !== 'tutorial' && !(typeof cur === 'object' && 'near' in cur && cur.near !== 'human');
+    if (this.state !== 'playing' || this.menu.open || !human) {
+      this.coach.show(null);
+      return;
+    }
+    this.matchClock += dt;
+    const before = Math.floor(this.settings.playSeconds / 5);
+    this.settings.playSeconds += dt;
+    if (Math.floor(this.settings.playSeconds / 5) !== before) saveSettings(this.settings);
+    const learning = this.settings.playSeconds < 120 || this.matchClock < 5;
+    this.coach.show(this.mode?.yourServe?.() ? 'serve' : learning ? 'controls' : null);
   }
 
   /** Paddle "pop": louder for harder hits, panned to where it was struck. */
@@ -980,6 +1009,6 @@ export class Game {
       this.timeScale > 1 ? '<span class="ok">FAST ×3</span>' : '',
       this.orbit ? '<span class="ok">FREE CAM</span> (drag to orbit, scroll to zoom)' : '',
     ].filter(Boolean);
-    return `<div class="dim"><b>Esc</b> / <b>P</b> Pause ${flags.join(' ')}</div>`;
+    return `<div class="dim"><b>P</b> Pause ${flags.join(' ')}</div>`;
   }
 }

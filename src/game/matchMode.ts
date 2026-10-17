@@ -808,6 +808,15 @@ export class MatchMode implements GameMode {
       <div>Last shot: ${this.lastShot}</div>`;
   }
 
+  cornerText(): string {
+    return this.watching ? '<b>F</b> Fast-forward · <b>T</b> Slow-mo · <b>P</b> Menu' : '';
+  }
+
+  yourServe(): boolean {
+    const you = this.you;
+    return this.phase === 'preServe' && !!you && this.server === you && !this.server.player.swing;
+  }
+
   cameraTargetX(): number {
     return this.you?.player.pos.x ?? this.w.ball.pos.x;
   }

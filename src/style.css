@@ -351,3 +351,44 @@ body.touch .hud-panel { display: none; }
 .rival small { display: block; font-weight: 600; font-size: 12px; opacity: 0.8; }
 .rival .mark { margin-left: auto; font-size: 16px; }
 .unlock { margin: 6px 0 12px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 200, 61, 0.15); border: 2px solid var(--sun); font-weight: 800; }
+
+/* ---------------------------------------------------------------- control hints (key caps) */
+.coach {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 6px 12px 5px;
+  background: rgba(27, 21, 48, 0.55);
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+  animation: coach-in 0.25s ease-out;
+}
+@keyframes coach-in { from { opacity: 0; transform: translate(-50%, 12px); } }
+.coach-title { font-family: 'Lilita One', sans-serif; font-size: 17px; color: var(--sun); align-self: center; }
+.coach-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.coach .caps { display: flex; align-items: center; gap: 4px; }
+.coach .caps-grid { display: grid; grid-template-columns: repeat(3, 20px); gap: 2px; }
+.coach .or { font-size: 11px; opacity: 0.6; margin: 0 4px; }
+.coach .cap {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--cream);
+  color: var(--ink);
+  font: 800 11px 'Nunito', sans-serif;
+  box-shadow: 0 2px 0 #b9ae95;
+}
+.coach-label { font-family: 'Lilita One', sans-serif; font-size: 12px; letter-spacing: 0.3px; }
+.coach .drive .cap { background: #ff8a5c; box-shadow: 0 3px 0 #b8502a; }
+.coach .soft .cap { background: #5cc4ff; box-shadow: 0 3px 0 #2a7fb0; }
+.coach .spin .cap { background: #b98cff; box-shadow: 0 3px 0 #6b3fc0; }
+body.touch .coach { display: none; }
+.hud-panel:empty { display: none; }

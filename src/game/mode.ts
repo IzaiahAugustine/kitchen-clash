@@ -42,8 +42,12 @@ export interface GameMode {
   onBallEvent(e: BallEvent, time: number): void;
   /** Once per rendered frame (dt is slow-mo aware and 0 while paused). */
   update(dt: number, time: number): void;
-  /** HTML for the info panel. */
+  /** HTML for the full info panel (shown with ?debug). */
   describe(): string;
+  /** One short line for the corner (rally count, connection...); empty or missing shows nothing. */
+  cornerText?(): string;
+  /** You're about to serve (shows the serve keys). */
+  yourServe?(): boolean;
   /** x position the camera should drift toward. */
   cameraTargetX(): number;
   /** Remove everything this mode added to the scene. */
