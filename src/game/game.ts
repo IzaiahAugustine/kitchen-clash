@@ -34,6 +34,7 @@ import { VENUES, VENUE_ORDER, VenueDresser, type VenueId } from '../render/venue
 import {
   CAP_COLORS,
   HAIR_COLORS,
+  type LookOption,
   HAIR_STYLES,
   HEADWEAR,
   PADDLES,
@@ -47,10 +48,14 @@ import {
 import { TouchControls, isTouchDevice } from '../input/touch';
 import { loadSettings, saveSettings, type CameraPreset, type Settings } from './settings';
 import { portal } from '../platform/portal';
+import { ACHIEVEMENTS, Progress, type MatchContext, type MatchTracker } from './progress';
 
 type AppState = 'title' | 'playing' | 'paused' | 'results';
 
 const LEVELS: Difficulty[] = ['easy', 'medium', 'hard'];
+type LookOptionList = LookOption[];
+/** A little gold coin (drawn in CSS, so it looks the same everywhere). */
+const coinIcon = () => '<span class="coin"></span>';
 const CAMERAS: CameraPreset[] = ['close', 'classic', 'wide'];
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
@@ -89,6 +94,11 @@ export class Game {
   private venueId: VenueId | null = null;
   private coach: Coach;
   private crowdTick = false;
+  private progress: Progress;
+  /** Counting coins/challenges for the match being played (null when it doesn't count). */
+  private tracker: MatchTracker | null = null;
+  /** Rewards earned during the current match (listed on the results screen). */
+  private matchRewards: string[] = [];
   private court: THREE.Object3D | null = null;
   /** Seconds since this match (or resume) began, for the control hints. */
   private matchClock = 0;
@@ -155,6 +165,16 @@ export class Game {
       this.menu.touch = true;
       document.body.classList.add('touch');
     }
+    this.progress = new Progress(this.settings.progress, () => saveSettings(this.settings));
+    this.progress.onReward = (r) => {
+      this.matchRewards.push(`${r.title.replace('!', '')}: ${r.detail} (+${r.coins})`);
+      const hud = this.world.hud;
+      const was = hud.muted;
+      hud.muted = false;
+      hud.flash(r.title, 'good', 2400, `${r.detail} · +${r.coins} coins`);
+      hud.muted = was;
+      this.sound.play('click', { volume: 0.8, pitch: 1.5 });
+    };
     this.applySettings();
     portal.onMuteChange = () => this.sound.setMuted(portal.muted || this.adPlaying);
     portal.onAdStart = () => {
@@ -235,6 +255,7 @@ export class Game {
 
   private setMode(mode: GameMode): void {
     this.mode?.dispose?.();
+    this.tracker = null;
     // A fast-forwarded or slow-mo AI match must never carry its speed into the next mode.
     this.timeScale = 1;
     if (this.orbit) this.toggleOrbit();
@@ -275,8 +296,17 @@ export class Game {
   private startMatch(near: Controller, far: Difficulty, doubles = this.settings.format === 'doubles'): void {
     this.current = { near, far, doubles };
     this.setVenue(this.settings.court);
-    this.setMode(this.matchMode(near, far, doubles));
+    const m = this.matchMode(near, far, doubles);
+    this.setMode(m);
+    if (near === 'human') this.track(m, 0, { kind: 'quick', opponent: far });
     this.enterPlaying();
+  }
+
+  /** Count this match for coins, challenges and achievements. */
+  private track(m: MatchMode | null, you: 0 | 1, ctx: MatchContext): void {
+    this.tracker = this.progress.tracker(you, ctx);
+    this.matchRewards = [];
+    if (m) m.observer = this.tracker;
   }
 
   // ---------------------------------------------------------------- tournament
@@ -326,8 +356,93 @@ export class Game {
   private startTournamentMatch(i: number): void {
     this.current = { tournament: i };
     this.setVenue(RIVALS[i].venue);
-    this.setMode(this.matchMode('human', 'medium', false, i));
+    const m = this.matchMode('human', 'medium', false, i);
+    this.setMode(m);
+    this.track(m, 0, { kind: 'tournament', opponent: 'medium' });
     this.enterPlaying();
+  }
+
+  // ---------------------------------------------------------------- coins: shop, challenges
+
+  /** Buy gear with coins. Bought items are worn straight away (shown on the model behind). */
+  private showShop(room: ShowroomMode, back: () => void, focus = -1): void {
+    const s = this.settings;
+    const coins = this.progress.state.coins;
+    const lists: [string, LookOptionList, keyof Look][] = [
+      ['shirt', SHIRTS, 'shirt'],
+      ['shorts', SHORTS, 'shorts'],
+      ['cap', CAP_COLORS, 'cap'],
+      ['paddle', PADDLES, 'paddle'],
+    ];
+    const items: MenuScreen['items'] = [];
+    for (const [what, list, key] of lists) {
+      list.forEach((o, i) => {
+        if (!o.price || !o.unlock) return;
+        const owned = s.unlocked.includes(o.unlock);
+        const unlock = o.unlock;
+        const price = o.price;
+        const row = items.length;
+        items.push({
+          label: owned
+            ? `${o.name} ${what} <span class="owned">✓ owned</span>`
+            : `<span class="swatch" style="background:${o.color}"></span>${o.name} ${what} <span class="price${price > coins ? ' short' : ''}">${coinIcon()} ${price}</span>`,
+          action: () => {
+            if (!owned) {
+              if (!this.progress.spend(price)) {
+                this.world.hud.muted = false;
+                this.world.hud.flash('Not enough coins', 'bad', 1400, 'Play matches and finish challenges to earn more');
+                this.world.hud.muted = true;
+                return;
+              }
+              s.unlocked.push(unlock);
+              this.sound.play('click', { volume: 0.9, pitch: 1.6 });
+            }
+            s.look = { ...s.look, [key]: i };
+            saveSettings(s);
+            room.setPalette(lookToPalette(s.look));
+            this.showShop(room, back, row);
+          },
+        });
+      });
+    }
+    items.push({ label: 'Back', primary: focus < 0, action: () => this.showMyPlayer(back) });
+    this.menu.show({
+      variant: 'side',
+      header: `<div class="menu-headline">Shop</div><div class="menu-sub">${coinIcon()} ${coins} coins · pick one to buy and wear it</div>`,
+      items,
+      focus,
+      back: () => this.showMyPlayer(back),
+    });
+  }
+
+  /** Today's three challenges and all achievements. */
+  private showChallenges(): void {
+    const p = this.progress;
+    const d = p.state.daily;
+    const daily = p.today
+      .map((c, i) => {
+        const done = d.done[i];
+        const pct = Math.round((100 * d.progress[i]) / c.target);
+        return `<div class="challenge${done ? ' done' : ''}"><div><b>${c.text}</b><small>${done ? 'Done!' : `${d.progress[i]} / ${c.target}`}</small>
+          <div class="bar"><i style="width:${pct}%"></i></div></div><span class="price">${coinIcon()} ${c.reward}</span></div>`;
+      })
+      .join('');
+    const got = new Set(p.state.achievements);
+    const awards = ACHIEVEMENTS.map(
+      (a) => `<div class="award${got.has(a.id) ? ' got' : ''}" title="${a.text}"><b>${got.has(a.id) ? '★' : '☆'} ${a.name}</b><small>${a.text} · ${coinIcon()} ${a.reward}</small></div>`,
+    ).join('');
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-headline">Daily Challenges</div><div class="menu-sub">New ones every day · ${coinIcon()} ${p.state.coins} coins</div>
+        <div class="challenges">${daily}</div>
+        <div class="menu-headline small">Achievements <small>${got.size}/${ACHIEVEMENTS.length}</small></div>
+        <div class="awards">${awards}</div>`,
+      items: [
+        { label: '▶ Play vs AI', primary: true, action: () => this.showQuickPlay() },
+        { label: 'Back', action: () => this.showTitle() },
+      ],
+      back: () => this.showTitle(),
+    });
   }
 
   // ---------------------------------------------------------------- my player
@@ -353,12 +468,12 @@ export class Game {
         },
       );
     };
-    const locked = PADDLES.length + SHIRTS.length + HEADWEAR.length + CAP_COLORS.length -
-      [PADDLES, SHIRTS, HEADWEAR, CAP_COLORS].reduce((n, l) => n + available(l as { unlock?: string }[], s.unlocked).length, 0);
+    const prizes = [PADDLES, SHIRTS, HEADWEAR, CAP_COLORS].flat() as { unlock?: string; price?: number }[];
+    const locked = prizes.filter((o) => o.unlock && !o.price && !s.unlocked.includes(o.unlock)).length;
     this.menu.show({
       variant: 'side',
       header: `<div class="menu-headline">My Player</div>
-        <div class="menu-sub">${locked ? `${locked} more items to unlock in the Tournament` : 'Everything unlocked!'}</div>`,
+        <div class="menu-sub">${coinIcon()} ${this.progress.state.coins} coins${locked ? ` · ${locked} prizes left in the Tournament` : ''}</div>`,
       items: [
         pick('Skin', SKIN_TONES, 'skin'),
         pick('Hair', HAIR_STYLES, 'hairStyle'),
@@ -368,6 +483,7 @@ export class Game {
         pick('Headwear', HEADWEAR, 'headwear'),
         pick('Cap color', CAP_COLORS, 'cap'),
         pick('Paddle', PADDLES, 'paddle'),
+        { label: `${coinIcon()} Shop`, action: () => this.showShop(room, back) },
         { label: 'Done', primary: true, action: back },
       ],
       back,
@@ -394,6 +510,7 @@ export class Game {
   private tutorialFinished(): void {
     this.settings.tutorialDone = true;
     saveSettings(this.settings);
+    this.progress.achieve('tutorial');
     this.state = 'results';
     this.touch?.setVisible(false);
     this.sound.setMusic(true);
@@ -502,6 +619,7 @@ export class Game {
     this.current = 'online';
     this.scoreboard.setNames(host.match.names);
     this.setMode(host);
+    this.track(host.match, 0, { kind: 'online', opponent: 'medium' });
     this.enterPlaying();
     this.world.hud.flash('Connected!', 'good', 1200, channel.kind === 'p2p' ? 'Direct connection' : 'Relayed connection (a bit slower)');
     console.info(`[KC] host connected via ${channel.kind}`);
@@ -545,12 +663,16 @@ export class Game {
       const channel = await room.connect();
       const guest = new OnlineGuest(this.world, this.template, this.scoreboard, channel, hostName);
       guest.onGameOver = (r) => this.showResults(r);
-      guest.onNewGame = () => this.enterPlaying();
+      guest.onNewGame = () => {
+        this.track(null, 1, { kind: 'online', opponent: 'medium' });
+        this.enterPlaying();
+      };
       guest.onGone = () => this.friendLeft();
       guest.onVenue = (id) => id in VENUES && this.setVenue(id as VenueId);
       room.onGone = () => this.friendLeft();
       this.current = 'online';
       this.setMode(guest);
+      this.track(null, 1, { kind: 'online', opponent: 'medium' });
       this.enterPlaying();
       console.info(`[KC] guest connected via ${channel.kind}`);
       this.world.hud.flash('Connected!', 'good', 1200, channel.kind === 'p2p' ? 'Direct connection' : 'Relayed connection (a bit slower)');
@@ -582,6 +704,7 @@ export class Game {
   private restart(): void {
     if (this.current === 'online') {
       if (this.mode instanceof OnlineHost) {
+        this.track(this.mode.match, 0, { kind: 'online', opponent: 'medium' });
         this.mode.rematch();
         this.enterPlaying();
       }
@@ -617,12 +740,13 @@ export class Game {
     const s = this.settings;
     this.menu.show({
       variant: 'title',
-      header: `<div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
+      header: `<div class="coin-badge">${coinIcon()} ${this.progress.state.coins}</div><div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
         { label: '▶ Play vs AI', primary: s.tutorialDone, action: () => this.showQuickPlay() },
         { label: `🏆 Tournament${s.tourneyWins >= RIVALS.length ? ' ✓' : s.tourneyWins ? ` (${s.tourneyWins}/${RIVALS.length})` : ''}`, action: () => this.showTournament() },
         { label: 'Play Online', action: () => this.showOnline() },
-        { label: 'My Player', action: () => this.showMyPlayer(() => this.showTitle()) },
+        { label: `Challenges (${this.progress.state.daily.done.filter(Boolean).length}/3 today)`, action: () => this.showChallenges() },
+        { label: 'My Player & Shop', action: () => this.showMyPlayer(() => this.showTitle()) },
         {
           label: s.tutorialDone ? 'How to Play' : '★ How to Play (new? start here)',
           primary: !s.tutorialDone,
@@ -738,7 +862,10 @@ export class Game {
         for (const id of rewardsFor(i)) if (!s.unlocked.includes(id)) s.unlocked.push(id);
         saveSettings(s);
         unlockLine = `<div class="unlock">Unlocked: ${RIVALS[i].reward.label}! Try it on in My Player.</div>`;
-        if (s.tourneyWins >= RIVALS.length) unlockLine += '<div class="unlock">🏆 You are the Pickle Champion!</div>';
+        if (s.tourneyWins >= RIVALS.length) {
+          unlockLine += '<div class="unlock">🏆 You are the Pickle Champion!</div>';
+          this.progress.achieve('champion');
+        }
       }
       tourneyItems = [
         youWon && i + 1 < RIVALS.length
@@ -747,6 +874,14 @@ export class Game {
         { label: 'My Player', action: () => this.showMyPlayer(() => this.showTournament()) },
         { label: 'Tournament', action: () => this.showTournament() },
       ];
+    }
+    // Coins for the match (and any challenges/achievements it finished).
+    let coinLine = '';
+    if (this.tracker) {
+      const earned = this.tracker.finish(r, !!youWon);
+      this.tracker = null;
+      const extras = this.matchRewards.map((t) => `<div class="reward">★ ${this.escape(t)}</div>`).join('');
+      coinLine = `<div class="coin-earned">${coinIcon()} +${earned} coins <small>· ${this.progress.state.coins} total</small></div>${extras}`;
     }
     const stats = [
       ['Rallies won', `${r.ralliesWon[0]}–${r.ralliesWon[1]}`],
@@ -759,7 +894,7 @@ export class Game {
       header: `<div class="menu-headline">${headline}</div>
         <div class="result-score">${r.points[0]} – ${r.points[1]}</div>
         <div class="menu-sub">${r.names[0]} vs ${r.names[1]}</div>
-        <div class="result-stats">${stats}</div>${unlockLine}`,
+        <div class="result-stats">${stats}</div>${coinLine}${unlockLine}`,
       items: tourneyItems ?? (
         this.current === 'online'
           ? this.mode instanceof OnlineHost

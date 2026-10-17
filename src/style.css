@@ -147,7 +147,9 @@ html, body {
 .menu-layer {
   position: absolute;
   inset: 0;
-  place-items: center;
+  /* "safe": a menu taller than the screen scrolls from its top instead of being cut off */
+  place-items: safe center;
+  overflow-y: auto;
   pointer-events: auto;
   background: rgba(27, 21, 48, 0.45);
   backdrop-filter: blur(3px);
@@ -269,6 +271,12 @@ html, body { touch-action: none; overscroll-behavior: none; -webkit-user-select:
 body.touch .hud-panel { display: none; }
 /* Menus can scroll on short screens even though the game blocks page gestures. */
 .menu-layer { touch-action: pan-y; }
+@media (max-height: 820px) and (min-height: 501px) {
+  .menu-items { gap: 6px; }
+  .menu-item { padding: 8px 16px; }
+  .logo { font-size: 58px; }
+  .tagline { margin-bottom: 10px; }
+}
 @media (max-width: 760px), (max-height: 500px) {
   .scoreboard { top: 6px; transform: translateX(-50%) scale(0.78); transform-origin: top center; }
   .hud-toasts { padding-top: 64px; }
@@ -310,6 +318,12 @@ body.touch .hud-panel { display: none; }
 .tut-pips span.on { background: var(--good); border-color: var(--good); box-shadow: 0 0 8px var(--good); }
 .tut-skip { all: unset; cursor: pointer; position: absolute; right: 12px; bottom: 8px; font-size: 12px; font-weight: 800; opacity: 0.6; }
 .tut-skip:hover { opacity: 1; }
+@media (max-height: 820px) and (min-height: 501px) {
+  .menu-items { gap: 6px; }
+  .menu-item { padding: 8px 16px; }
+  .logo { font-size: 58px; }
+  .tagline { margin-bottom: 10px; }
+}
 @media (max-width: 760px), (max-height: 500px) {
   .tutorial-card { padding: 8px 12px; top: 6px; }
   .tut-title { font-size: 20px; }
@@ -392,3 +406,41 @@ body.touch .hud-panel { display: none; }
 .coach .spin .cap { background: #b98cff; box-shadow: 0 3px 0 #6b3fc0; }
 body.touch .coach { display: none; }
 .hud-panel:empty { display: none; }
+
+/* ---------------------------------------------------------------- coins, shop, challenges */
+.coin {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  background: radial-gradient(circle at 35% 35%, #fff3a8, #ffd23f 45%, #d99a00);
+  box-shadow: inset 0 0 0 0.09em #b07800;
+}
+.coin-badge { position: absolute; top: 14px; right: 16px; font-family: 'Lilita One', sans-serif; font-size: 20px; color: var(--sun); }
+.menu-card { position: relative; }
+.coin-earned { font-family: 'Lilita One', sans-serif; font-size: 24px; color: var(--sun); margin: -6px 0 8px; }
+.coin-earned small { font-family: 'Nunito', sans-serif; font-size: 13px; color: var(--cream); opacity: 0.75; }
+.reward { font-weight: 800; font-size: 13px; color: var(--good); margin-bottom: 4px; }
+.menu-item .price { margin-left: auto; font-family: 'Lilita One', sans-serif; color: var(--sun); }
+.menu-item .price.short { opacity: 0.45; }
+.menu-item .owned { margin-left: auto; font-size: 13px; color: var(--good); }
+.menu-item .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--ink); flex: none; }
+.menu-layer.side .menu-card { max-height: 92vh; overflow-y: auto; }
+.challenges { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; text-align: left; }
+.challenge { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.08); }
+.challenge > div { flex: 1; }
+.challenge small { display: block; font-weight: 800; opacity: 0.7; font-size: 12px; }
+.challenge .bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.15); margin-top: 4px; overflow: hidden; }
+.challenge .bar i { display: block; height: 100%; background: var(--sun); }
+.challenge.done { background: rgba(61, 255, 122, 0.14); }
+.challenge.done .bar i { background: var(--good); }
+.challenge .price { font-family: 'Lilita One', sans-serif; color: var(--sun); white-space: nowrap; }
+.menu-headline.small { font-size: 22px; }
+.menu-headline small { font-size: 14px; opacity: 0.7; }
+.awards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 14px; text-align: left; max-height: 34vh; overflow-y: auto; }
+.award { padding: 6px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); opacity: 0.55; font-size: 13px; }
+.award small { display: block; font-size: 11px; opacity: 0.8; }
+.award.got { opacity: 1; background: rgba(255, 210, 63, 0.16); }
+.award.got b { color: var(--sun); }
+.menu-item.selected .owned { color: var(--ink); }

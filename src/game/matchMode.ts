@@ -96,7 +96,7 @@ export interface RemoteInput {
 export interface MatchListener {
   serveSetup(info: { serverTeam: Team; call: string; positions: { x: number; z: number }[]; setup: ServeSetup }): void;
   rallyEnd(info: { fault: Fault; loser: Team; outcome: RallyOutcome; shots: number }): void;
-  hit(info: { team: Team; kind: string; grade: string; mph: number; spun: boolean; low: boolean }): void;
+  hit(info: { team: Team; kind: string; grade: string; mph: number; spun: boolean; low: boolean; human?: boolean }): void;
   gameOver(result: MatchResult): void;
 }
 
@@ -192,6 +192,8 @@ export class MatchMode implements GameMode {
   onGameOver: ((r: MatchResult) => void) | null = null;
   /** Online host: told about serves, hits, points and the end of the game. */
   listener: MatchListener | null = null;
+  /** A second listener on this computer (coins, challenges, achievements). */
+  observer: Partial<MatchListener> | null = null;
   /** Online: the last half-second of ball states, so a friend's late-arriving hit can rewind. */
   private ballHistory: { t: number; pos: Vector3; vel: Vector3; spin: Vector3; rolling: boolean; flight: number; bounces: number }[] = [];
   /** Online: a "bounced twice" call on the friend's side, held briefly in case their hit is in the post. */
@@ -259,6 +261,11 @@ export class MatchMode implements GameMode {
 
   private get doubles(): boolean {
     return this.opts.scoring.teamSize === 2;
+  }
+
+  private emit<K extends keyof MatchListener>(key: K, info: Parameters<MatchListener[K]>[0]): void {
+    (this.listener?.[key] as ((i: typeof info) => void) | undefined)?.call(this.listener, info);
+    (this.observer?.[key] as ((i: typeof info) => void) | undefined)?.call(this.observer, info);
   }
 
   private get watching(): boolean {
@@ -344,7 +351,7 @@ export class MatchMode implements GameMode {
     }
     this.phaseTimer = server.ai ? AI_SERVE_DELAY : 0;
     this.holdBallForServe();
-    this.listener?.serveSetup({
+    this.emit('serveSetup', {
       serverTeam: server.team,
       call: this.score.call(),
       positions: this.seats.map((s) => ({ x: s.player.pos.x, z: s.player.pos.z })),
@@ -691,13 +698,14 @@ export class MatchMode implements GameMode {
       const report = executeShot(ball, p, sw, s.ai?.aim ?? s.human!.aim);
       s.ai?.onHit(report.kind, isReturn);
       this.afterHit(s, time);
-      this.listener?.hit({
+      this.emit('hit', {
         team: s.team,
         kind: report.kind,
         grade: report.timing.grade,
         mph: report.mph,
         spun: sw.button === 'spin',
         low: report.lowAttack > 0,
+        human: !!s.human && !s.remote,
       });
       if (fault) this.endRally(fault);
       else this.onGoodHit(s, report);
@@ -722,7 +730,7 @@ export class MatchMode implements GameMode {
     const fault = this.referee.onHit(s.player.side, rw.bounces > 0, s.player.pos.z, time);
     const report = executeShot(ball, s.player, sw, s.human!.aim);
     this.afterHit(s, time);
-    this.listener?.hit({
+    this.emit('hit', {
       team: s.team,
       kind: report.kind,
       grade: report.timing.grade,
@@ -863,7 +871,7 @@ export class MatchMode implements GameMode {
     const servingBefore = this.score.servingTeam;
     const outcome = this.score.rallyWonBy(winner);
     this.rotation.afterRally(servingBefore, outcome);
-    this.listener?.rallyEnd({ fault, loser, outcome, shots });
+    this.emit('rallyEnd', { fault, loser, outcome, shots });
     const text = FAULT_TEXT[fault.reason];
     const who = humanLost ? (this.doubles ? 'Your team' : 'You') : this.teamNames[loser];
     const result =
@@ -897,7 +905,7 @@ export class MatchMode implements GameMode {
           ralliesWon: [...this.ralliesWon] as [number, number],
           humanTeam: this.teams[0].some((s) => s.human && !s.remote),
         };
-        this.listener?.gameOver(result);
+        this.emit('gameOver', result);
         setTimeout(() => this.onGameOver?.(result), 1500);
       }
     } else if (this.score.gamePointFor() !== null) {

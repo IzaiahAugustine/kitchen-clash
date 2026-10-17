@@ -2,6 +2,7 @@ import type { Difficulty } from '../ai/difficulty';
 import { DEFAULT_LOOK, type Look } from '../players/look';
 import type { VenueId } from '../render/venues';
 import type { ScoringMode } from '../rules/scoring';
+import { NEW_PROGRESS, type ProgressState } from './progress';
 
 export type CameraPreset = 'close' | 'classic' | 'wide';
 
@@ -33,6 +34,8 @@ export interface Settings {
   court: VenueId;
   /** Seconds played in total (new players get the control hints for a while). */
   playSeconds: number;
+  /** Coins, challenges, achievements. */
+  progress: ProgressState;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,7 +55,25 @@ export const DEFAULT_SETTINGS: Settings = {
   tourneyWins: 0,
   court: 'park',
   playSeconds: 0,
+  progress: NEW_PROGRESS,
 };
+
+/** A fresh copy (the defaults' nested objects must never be shared or changed). */
+function fresh(saved: Partial<Settings> = {}): Settings {
+  const p = saved.progress;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...saved,
+    unlocked: [...(saved.unlocked ?? [])],
+    progress: {
+      ...NEW_PROGRESS,
+      ...p,
+      stats: { ...NEW_PROGRESS.stats, ...p?.stats },
+      achievements: [...(p?.achievements ?? [])],
+      daily: p?.daily ? { ...p.daily, progress: [...p.daily.progress], done: [...p.daily.done] } : { ...NEW_PROGRESS.daily, progress: [0, 0, 0], done: [false, false, false] },
+    },
+  };
+}
 
 const KEY = 'kitchen-clash-settings';
 
@@ -60,9 +81,9 @@ const KEY = 'kitchen-clash-settings';
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) } : { ...DEFAULT_SETTINGS };
+    return fresh(raw ? (JSON.parse(raw) as Partial<Settings>) : {});
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return fresh();
   }
 }
 

@@ -13,6 +13,8 @@ export interface MenuScreen {
   back?: () => void;
   /** Extra CSS class on the layer (e.g. 'title' for the full-screen title look). */
   variant?: string;
+  /** Item to start on (default: the primary one). */
+  focus?: number;
 }
 
 const UP = ['ArrowUp', 'KeyW'];
@@ -45,7 +47,7 @@ export class Menu {
 
   show(screen: MenuScreen): void {
     this.screen = screen;
-    this.index = screen.items.findIndex((i) => 'action' in i && i.primary);
+    this.index = screen.focus !== undefined && screen.focus >= 0 ? screen.focus : screen.items.findIndex((i) => 'action' in i && i.primary);
     if (this.index < 0) this.index = 0;
     this.render();
   }

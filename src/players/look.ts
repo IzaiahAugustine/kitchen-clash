@@ -1,10 +1,14 @@
 import type { HairStyle, Headwear, Palette } from './palette';
 
-/** One choice in the character creator. `unlock` items are earned in the tournament. */
+/**
+ * One choice in the character creator. `unlock` items must be earned first: in the tournament,
+ * or (with a `price`) bought with coins in the shop.
+ */
 export interface LookOption {
   name: string;
   color: string;
   unlock?: string;
+  price?: number;
 }
 
 export const SKIN_TONES: LookOption[] = [
@@ -34,6 +38,10 @@ export const SHIRTS: LookOption[] = [
   { name: 'White', color: '#f5f5f5' },
   { name: 'Mint', color: '#7ee8c3', unlock: 'shirt-mint' },
   { name: 'Gold', color: '#ffc83d', unlock: 'shirt-gold' },
+  { name: 'Purple', color: '#7b2ff7', unlock: 'buy-shirt-purple', price: 120 },
+  { name: 'Black', color: '#26232e', unlock: 'buy-shirt-black', price: 120 },
+  { name: 'Lime', color: '#a7e22e', unlock: 'buy-shirt-lime', price: 150 },
+  { name: 'Coral', color: '#ff7f6e', unlock: 'buy-shirt-coral', price: 150 },
 ];
 export const SHORTS: LookOption[] = [
   { name: 'Charcoal', color: '#2b2d42' },
@@ -41,6 +49,8 @@ export const SHORTS: LookOption[] = [
   { name: 'Navy', color: '#22305a' },
   { name: 'Khaki', color: '#b8a07a' },
   { name: 'White', color: '#eeeeee' },
+  { name: 'Red', color: '#b8322a', unlock: 'buy-shorts-red', price: 80 },
+  { name: 'Royal', color: '#2d5bd8', unlock: 'buy-shorts-royal', price: 80 },
 ];
 export const CAP_COLORS: LookOption[] = [
   { name: 'Yellow', color: '#ffd23f' },
@@ -49,6 +59,8 @@ export const CAP_COLORS: LookOption[] = [
   { name: 'Red', color: '#e63946' },
   { name: 'Teal', color: '#00b4d8' },
   { name: 'Purple', color: '#7b2ff7', unlock: 'cap-purple' },
+  { name: 'Orange', color: '#ff8c1a', unlock: 'buy-cap-orange', price: 80 },
+  { name: 'Pink', color: '#ff8fab', unlock: 'buy-cap-pink', price: 80 },
 ];
 export const PADDLES: LookOption[] = [
   { name: 'Red', color: '#e63946' },
@@ -58,6 +70,10 @@ export const PADDLES: LookOption[] = [
   { name: 'Sky', color: '#5cc4ff', unlock: 'paddle-sky' },
   { name: 'Flame', color: '#ff5a1f', unlock: 'paddle-flame' },
   { name: 'Gold', color: '#ffc83d', unlock: 'paddle-gold' },
+  { name: 'Teal', color: '#00b4d8', unlock: 'buy-paddle-teal', price: 150 },
+  { name: 'Pink', color: '#ff5fa2', unlock: 'buy-paddle-pink', price: 150 },
+  { name: 'Purple', color: '#8a2be2', unlock: 'buy-paddle-purple', price: 200 },
+  { name: 'Neon', color: '#39ff14', unlock: 'buy-paddle-neon', price: 250 },
 ];
 export const HAIR_STYLES: { name: string; id: HairStyle }[] = [
   { name: 'Short', id: 'short' },
