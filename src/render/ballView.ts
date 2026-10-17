@@ -36,7 +36,7 @@ export class BallView {
   constructor(scene: THREE.Scene) {
     const r = PHYS.ballRadius * VISUAL_SCALE;
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 18), surfaceMaterial(0xffffff, { map: ballTexture(), roughness: 0.45 }));
-    addOutline(this.mesh, 0.002);
+    addOutline(this.mesh, 0.002, true);
 
     // Blob shadow straight below the ball: the most important depth cue from a high camera.
     this.shadow = new THREE.Mesh(

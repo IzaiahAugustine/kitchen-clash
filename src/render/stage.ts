@@ -36,6 +36,24 @@ function qualityLadder(): QualityLevel[] {
 }
 
 /**
+ * Graphics chips that usually can't hold 60 fps at full detail: software rendering, older or
+ * low-end Intel laptop graphics, budget phone GPUs. Few CPU cores is a hint too (Chromebooks).
+ */
+function weakDevice(renderer: THREE.WebGLRenderer): boolean {
+  if (hasDebugFlag('lowgfx')) return true;
+  let gpu = '';
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  } catch {
+    // unknown: judge by cores alone
+  }
+  const slowGpu = /swiftshader|llvmpipe|software|intel.*(hd|uhd) graphics|mali-[gt]?[1-7]\d\b|adreno.*\b[1-5]\d\d\b|powervr/i.test(gpu);
+  return slowGpu || (navigator.hardwareConcurrency ?? 8) <= 2;
+}
+
+/**
  * Renderer, scene, sky and lights. Resolution adapts to keep the frame rate smooth.
  * `?hifx` adds ambient occlusion (soft contact shadows) for fast GPUs.
  */
@@ -44,6 +62,8 @@ export class Stage {
   readonly scene = new THREE.Scene();
   readonly sun: THREE.DirectionalLight;
   readonly hemi = new THREE.HemisphereLight(0xdcefff, 0x5f8f4a, 0.9);
+  /** A low-end device (or the quality ladder hit bottom): skip nice-to-have work like crowd animation detail. */
+  lite = false;
   private composer: EffectComposer | null = null;
   private ao: GTAOPass | null = null;
   private camera: THREE.Camera | null = null;
@@ -59,13 +79,16 @@ export class Stage {
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Weak devices start low (smaller render, simpler shadows) instead of stuttering first.
+    this.lite = weakDevice(this.renderer);
+    if (this.lite) this.level = Math.max(0, this.ladder.findIndex((q) => q.pixelRatio <= 1.25 && q.shadowSize > 0));
     this.renderer.setPixelRatio(this.ladder[this.level].pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
     this.scene.background = skyTexture();
@@ -163,6 +186,7 @@ export class Stage {
     const prev = this.ladder[this.level];
     const q = this.ladder[i];
     this.level = i;
+    if (i === this.ladder.length - 1) this.lite = true;
     if (q.pixelRatio !== prev.pixelRatio) {
       this.renderer.setPixelRatio(q.pixelRatio);
       this.resize();

@@ -88,6 +88,7 @@ export class Game {
   private venues: VenueDresser | null = null;
   private venueId: VenueId | null = null;
   private coach: Coach;
+  private crowdTick = false;
   /** Seconds since this match (or resume) began, for the control hints. */
   private matchClock = 0;
   private fpsFrom = 0;
@@ -182,7 +183,9 @@ export class Game {
     const court0 = debugFlag('court');
     if (court0 && court0 in VENUES) this.settings.court = court0 as VenueId;
     this.setVenue(this.settings.court);
-    void this.findTitleArt();
+    // The title screen shows the real game (an AI match) behind the menu, so what players see
+    // first is what they get. Painted title art (public/art/) is only used with ?titleart.
+    if (hasDebugFlag('titleart')) void this.findTitleArt();
 
     if (lab) {
       this.setMode(new BallLab(this.world));
@@ -905,7 +908,9 @@ export class Game {
     if (!frozen) mode.update(gameDt, this.time);
     ballView.update(ball, gameDt, this.cam.camera);
     this.effects.update(dt, this.cam.camera);
-    this.crowd.update(this.time, gameDt);
+    // Low-end devices animate the crowd at half rate (hundreds of fans, all on the CPU).
+    if (!this.stage.lite || (this.crowdTick = !this.crowdTick)) this.crowd.update(this.time, this.stage.lite ? gameDt * 2 : gameDt);
+    this.venues?.update(this.time);
 
     if (mode.cameraPose?.(this.cam.camera, dt)) {
       // the mode placed the camera

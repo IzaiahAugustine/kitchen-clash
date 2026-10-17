@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { addOutline, surfaceMaterial } from './materials';
-import { courtSpeckle } from './textures';
+import { courtSpeckle, hardwood } from './textures';
 
 export type VenueId = 'park' | 'beach' | 'gym' | 'night';
 
@@ -18,6 +20,8 @@ export interface Venue {
   colors: { court: string; kitchen: string; surround: string; ground: string; windscreen: string };
   /** Hide the park's trees and hills (indoor, beach). */
   hideNature: boolean;
+  /** Outdoor daylight: a real sky (with clouds) that also lights the scene. Missing = painted gradient. */
+  daySky?: { turbidity: number; rayleigh: number; clouds: number };
 }
 
 export const VENUES: Record<VenueId, Venue> = {
@@ -30,8 +34,9 @@ export const VENUES: Record<VenueId, Venue> = {
     sun: { color: 0xfff1dc, intensity: 2.6, pos: [-30, 70, 30] },
     exposure: 1.05,
     env: 0.45,
-    colors: { court: '#2f74d0', kitchen: '#5cc4ff', surround: '#2f9e63', ground: '#7cc95a', windscreen: '#ffffff' },
+    colors: { court: '#2f74d0', kitchen: '#5cc4ff', surround: '#2f9e63', ground: '#5f9e43', windscreen: '#ffffff' },
     hideNature: false,
+    daySky: { turbidity: 2.5, rayleigh: 1.2, clouds: 0.45 },
   },
   beach: {
     id: 'beach',
@@ -44,6 +49,7 @@ export const VENUES: Record<VenueId, Venue> = {
     env: 0.45,
     colors: { court: '#1f8a9e', kitchen: '#f2a65a', surround: '#2bb3a3', ground: '#ecd7a2', windscreen: '#ffe9c9' },
     hideNature: true,
+    daySky: { turbidity: 6, rayleigh: 2.2, clouds: 0.3 },
   },
   gym: {
     id: 'gym',
@@ -54,7 +60,7 @@ export const VENUES: Record<VenueId, Venue> = {
     sun: { color: 0xffffff, intensity: 1.9, pos: [0, 80, 8] },
     exposure: 1.0,
     env: 0.5,
-    colors: { court: '#3a6fb0', kitchen: '#e9c46a', surround: '#c98f55', ground: '#b88250', windscreen: '#e8e1d6' },
+    colors: { court: '#3a6fb0', kitchen: '#e9c46a', surround: '#c08a52', ground: '#b88250', windscreen: '#e8e1d6' },
     hideNature: true,
   },
   night: {
@@ -80,6 +86,9 @@ export const VENUE_ORDER: VenueId[] = ['park', 'beach', 'gym', 'night'];
 export class VenueDresser {
   private props: THREE.Group | null = null;
   private meshes = new Map<string, THREE.Mesh[]>();
+  private sky: Sky | null = null;
+  private chainLink: THREE.Object3D | null = null;
+  private envs = new Map<VenueId, THREE.Texture>();
 
   constructor(
     private scene: THREE.Scene,
@@ -89,6 +98,7 @@ export class VenueDresser {
     private renderer: THREE.WebGLRenderer,
   ) {
     court.traverse((o) => {
+      if (o.name === 'fence_chainlink') this.chainLink = o;
       const m = o as THREE.Mesh;
       if (!m.isMesh || m.name.endsWith('_outline')) return;
       const key = ['flat_court', 'flat_kitchen', 'flat_surround', 'flat_ground', 'ol_windscreen', 'ol_tree', 'ol_hill'].find((k) =>
@@ -108,20 +118,44 @@ export class VenueDresser {
     color('flat_ground', v.colors.ground);
     color('ol_windscreen', v.colors.windscreen);
     for (const key of ['ol_tree', 'ol_hill']) for (const m of this.meshes.get(key) ?? []) m.visible = !v.hideNature;
+    if (this.chainLink) this.chainLink.visible = v.id !== 'gym';
     // Sand and a gym floor read better without the grass blades.
     for (const m of this.meshes.get('flat_ground') ?? []) {
       const mat = m.material as THREE.MeshStandardMaterial;
+      if (!mat.userData.grass) mat.userData.grass = mat.map;
       if (v.id === 'beach' || v.id === 'gym') {
         if (!mat.userData.speckle) mat.userData.speckle = courtSpeckle();
-        if (!mat.userData.grass) mat.userData.grass = mat.map;
-        mat.map = mat.userData.speckle as THREE.Texture;
-      } else if (mat.userData.grass) {
+        if (!mat.userData.wood) {
+          const wood = hardwood();
+          wood.repeat.set(20 / 10, 20 / 10); // ground UVs: 1 unit = 20 ft; planks ~1.25 ft wide
+          mat.userData.wood = wood;
+        }
+        mat.map = (v.id === 'gym' ? mat.userData.wood : mat.userData.speckle) as THREE.Texture;
+        mat.bumpMap = v.id === 'gym' ? null : mat.map;
+        mat.roughness = v.id === 'gym' ? 0.45 : 1;
+      } else {
         mat.map = mat.userData.grass as THREE.Texture;
+        mat.bumpMap = mat.map;
+        mat.roughness = 1;
       }
       mat.needsUpdate = true;
     }
 
-    this.scene.background = skyTexture(v.sky);
+    // Indoors the court is painted straight onto the gym's hardwood.
+    for (const m of this.meshes.get('flat_surround') ?? []) {
+      const mat = m.material as THREE.MeshStandardMaterial;
+      if (!mat.userData.acrylic) mat.userData.acrylic = mat.map;
+      if (v.id === 'gym' && !mat.userData.wood) {
+        const wood = hardwood();
+        wood.repeat.set(6 / 10, 6 / 10); // surround UVs: 1 unit = 6 ft
+        mat.userData.wood = wood;
+      }
+      mat.map = (v.id === 'gym' ? mat.userData.wood : mat.userData.acrylic) as THREE.Texture;
+      mat.bumpMap = v.id === 'gym' ? null : mat.map;
+      mat.roughness = v.id === 'gym' ? 0.45 : 0.8;
+      mat.needsUpdate = true;
+    }
+    this.applySky(v);
     this.scene.fog = new THREE.Fog(v.fog[0], v.fog[1], v.fog[2]);
     this.hemi.color.set(v.hemi[0]);
     this.hemi.groundColor.set(v.hemi[1]);
@@ -130,7 +164,7 @@ export class VenueDresser {
     this.sun.intensity = v.sun.intensity;
     this.sun.position.set(...v.sun.pos);
     this.renderer.toneMappingExposure = v.exposure;
-    this.scene.environmentIntensity = v.env;
+    this.scene.environmentIntensity = v.daySky ? v.env * 0.3 : v.env;
 
     if (this.props) {
       this.scene.remove(this.props);
@@ -138,6 +172,64 @@ export class VenueDresser {
     }
     this.props = v.id === 'beach' ? beachProps() : v.id === 'gym' ? gymProps() : v.id === 'night' ? nightProps() : null;
     if (this.props) this.scene.add(this.props);
+  }
+
+  /**
+   * Daylight venues get a physically based sky dome (sun, haze, drifting clouds), and the same
+   * sky — captured once into an environment map — lights everything, so shading and reflections
+   * match what you see. Other venues keep a painted gradient and studio-style light.
+   */
+  private applySky(v: Venue): void {
+    if (!v.daySky) {
+      if (this.sky) this.sky.visible = false;
+      this.scene.background = skyTexture(v.sky);
+      this.scene.environment = this.env(v.id, () => new RoomEnvironment(), 0.04);
+      return;
+    }
+    if (!this.sky) {
+      this.sky = new Sky();
+      // A box: keep its corners inside the camera's far plane (600).
+      this.sky.scale.setScalar(320);
+      this.sky.frustumCulled = false;
+      this.scene.add(this.sky);
+    }
+    const sky = this.sky;
+    const u = sky.material.uniforms;
+    u.turbidity.value = v.daySky.turbidity;
+    u.rayleigh.value = v.daySky.rayleigh;
+    u.mieCoefficient.value = 0.004;
+    u.mieDirectionalG.value = 0.82;
+    u.cloudCoverage.value = v.daySky.clouds;
+    u.cloudDensity.value = 0.45;
+    u.sunPosition.value.set(...v.sun.pos).normalize();
+    sky.visible = true;
+    this.scene.background = null;
+    this.scene.environment = this.env(v.id, () => {
+      const s = new THREE.Scene();
+      const copy = new Sky();
+      copy.scale.setScalar(100);
+      for (const k of Object.keys(u)) copy.material.uniforms[k].value = u[k].value;
+      copy.material.uniforms.showSunDisc.value = 0;
+      s.add(copy);
+      return s;
+    });
+  }
+
+  /** Environment light for a venue, made once and reused. */
+  private env(id: VenueId, scene: () => THREE.Scene, blur = 0): THREE.Texture {
+    let t = this.envs.get(id);
+    if (!t) {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      t = pmrem.fromScene(scene(), blur).texture;
+      pmrem.dispose();
+      this.envs.set(id, t);
+    }
+    return t;
+  }
+
+  /** Clouds drift slowly. */
+  update(time: number): void {
+    if (this.sky?.visible) this.sky.material.uniforms.time.value = time;
   }
 }
 

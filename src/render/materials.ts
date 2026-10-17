@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
- * Stylized look: clean, mostly matte physically-based surfaces lit by the sun and sky,
- * with thin ink outlines to keep shapes crisp from the high camera.
+ * Natural look: physically-based surfaces lit by the sun and sky. Ink outlines (the old cartoon
+ * style) are off everywhere except where `force` asks for one (the ball, so it reads at a glance).
  */
+const OUTLINES = false;
 
 export const OUTLINE_COLOR = 0x1b1530;
 
@@ -48,7 +49,8 @@ export function outlineMaterial(thickness = 0.0015): THREE.MeshBasicMaterial {
 }
 
 /** Adds an outline hull to a mesh. Normals are re-smoothed so hard edges don't crack the line. */
-export function addOutline(mesh: THREE.Mesh, thickness?: number): THREE.Mesh {
+export function addOutline(mesh: THREE.Mesh, thickness?: number, force = false): THREE.Mesh | null {
+  if (!OUTLINES && !force) return null;
   const geo = mesh.geometry.clone();
   for (const name of Object.keys(geo.attributes)) {
     if (name !== 'position' && name !== 'skinIndex' && name !== 'skinWeight') geo.deleteAttribute(name);
