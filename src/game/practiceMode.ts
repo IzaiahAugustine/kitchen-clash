@@ -86,7 +86,7 @@ export class PracticeMode implements GameMode {
   }
 
   dispose(): void {
-    for (const [, v] of this.views) this.w.scene.remove(v.root);
+    for (const [, v] of this.views) v.dispose();
     this.markers.dispose();
   }
 

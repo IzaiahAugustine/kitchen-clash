@@ -162,7 +162,7 @@ export class TutorialMode implements GameMode {
   }
 
   dispose(): void {
-    for (const [, v] of this.views) this.w.scene.remove(v.root);
+    for (const [, v] of this.views) v.dispose();
     this.card.remove();
     this.w.fx?.setLanding(null);
     this.w.fx?.setServeBox(null);

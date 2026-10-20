@@ -169,6 +169,9 @@ html, body {
   text-align: center;
 }
 .menu-layer.title .menu-card { background: rgba(27, 21, 48, 0.78); }
+.menu-card.enter { animation: menu-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+@keyframes menu-in { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
+.menu-item { transition: transform 0.12s ease, background-color 0.12s ease; }
 .logo {
   font-family: 'Lilita One', sans-serif;
   font-size: clamp(40px, 8vw, 66px);

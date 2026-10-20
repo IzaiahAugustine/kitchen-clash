@@ -376,7 +376,7 @@ export class MatchMode implements GameMode {
 
   dispose(): void {
     this.disposed = true;
-    for (const [, v] of this.views) this.w.scene.remove(v.root);
+    for (const [, v] of this.views) v.dispose();
     this.markers.dispose();
   }
 

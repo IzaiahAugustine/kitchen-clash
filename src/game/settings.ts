@@ -24,7 +24,9 @@ export interface Settings {
   /** Slow-motion replays of great points. */
   replays: boolean;
   /** High adds ambient occlusion (needs a strong GPU). */
-  graphics: 'standard' | 'high';
+  graphics: 'auto' | 'standard' | 'high';
+  /** The player picked Graphics themselves (older saves had Standard only as the default). */
+  graphicsPicked?: boolean;
   /** Finished (or skipped through) How to Play. */
   tutorialDone: boolean;
   /** Your name in online matches. */
@@ -56,7 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
   musicVolume: 6,
   announcer: true,
   replays: true,
-  graphics: 'standard',
+  graphics: 'auto',
   tutorialDone: false,
   name: '',
   look: DEFAULT_LOOK,
@@ -75,6 +77,7 @@ function fresh(saved: Partial<Settings> = {}): Settings {
     ...DEFAULT_SETTINGS,
     ...saved,
     unlocked: [...(saved.unlocked ?? [])],
+    graphics: saved.graphicsPicked || saved.graphics === 'high' ? (saved.graphics ?? 'auto') : 'auto',
     career: { ...NEW_CAREER, ...saved.career, stats: { ...NEW_CAREER.stats, ...saved.career?.stats } },
     progress: {
       ...NEW_PROGRESS,

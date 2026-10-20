@@ -28,6 +28,8 @@ const BACK = ['Escape', 'Backspace', 'KeyK', 'KeyX'];
 export class Menu {
   private layer: HTMLDivElement;
   private screen: MenuScreen | null = null;
+  private entering = false;
+  private lastTitle = '';
   private index = 0;
   /** Called on every navigation / activation (for the click sound). */
   onNavigate: () => void = () => {};
@@ -46,6 +48,10 @@ export class Menu {
   }
 
   show(screen: MenuScreen): void {
+    // Slide in when a menu opens or the screen changes (not when the same screen refreshes).
+    const title = screen.header.slice(0, screen.header.indexOf('</div>') + 1);
+    this.entering = this.layer.style.display === 'none' || title !== this.lastTitle;
+    this.lastTitle = title;
     this.screen = screen;
     this.index = screen.focus !== undefined && screen.focus >= 0 ? screen.focus : screen.items.findIndex((i) => 'action' in i && i.primary);
     if (this.index < 0) this.index = 0;
@@ -123,7 +129,8 @@ export class Menu {
     const hint = this.touch
       ? '<div class="menu-hint">Tap to choose · tap a setting to change it</div>'
       : '<div class="menu-hint">↑↓ choose · ←→ change · Enter select · Backspace back</div>';
-    this.layer.innerHTML = `<div class="menu-card">${s.header}<div class="menu-items">${rows}</div>${hint}</div>`;
+    this.layer.innerHTML = `<div class="menu-card${this.entering ? ' enter' : ''}">${s.header}<div class="menu-items">${rows}</div>${hint}</div>`;
+    this.entering = false;
     this.layer.querySelectorAll<HTMLElement>('.menu-item').forEach((el) => {
       const i = Number(el.dataset.i);
       el.addEventListener('mouseenter', () => {

@@ -24,7 +24,7 @@ export class ShowroomMode implements GameMode {
   }
 
   setPalette(p: Palette): void {
-    if (this.view) this.w.scene.remove(this.view.root);
+    this.view?.dispose();
     this.view = this.template ? new PlayerView(this.template, p) : null;
     if (this.view) this.w.scene.add(this.view.root);
   }
@@ -56,6 +56,6 @@ export class ShowroomMode implements GameMode {
   }
 
   dispose(): void {
-    if (this.view) this.w.scene.remove(this.view.root);
+    this.view?.dispose();
   }
 }

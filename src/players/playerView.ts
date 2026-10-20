@@ -113,12 +113,39 @@ function lipColor(skin: string): string {
   return `#${c.getHexString()}`;
 }
 const smooth = (t: number) => t * t * (3 - 2 * t);
+
+let blobTexture: THREE.CanvasTexture | null = null;
+/** Soft dark spot under a player's feet (grounds them, even with shadows off on slow devices). */
+function contactShadow(): THREE.Mesh {
+  if (!blobTexture) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0.25)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    blobTexture = new THREE.CanvasTexture(c);
+  }
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4, 2.4).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, depthWrite: false }),
+  );
+  m.name = 'contact_shadow';
+  m.renderOrder = 1;
+  m.position.y = 0.04;
+  return m;
+}
 /** Time to swing the paddle from wind-up to contact. */
 const FORWARD_SWING = 0.13;
 
 /** A player's 3D model, recolored with their palette and animated procedurally each frame. */
 export class PlayerView {
   readonly root: THREE.Object3D;
+  /** Geometry and materials made for this player only (freed by dispose). */
+  private owned: { dispose(): void }[] = [];
   private j = {} as Record<JointName, THREE.Object3D>;
   private phase = Math.random() * 10;
   private yaw = Number.NaN;
@@ -153,6 +180,7 @@ export class PlayerView {
       if (!m) {
         m = surfaceMaterial(colors[slot] ?? src.color, SURFACE[slot] ?? {});
         materials.set(slot, m);
+        this.owned.push(m);
       }
       mesh.material = m;
       mesh.castShadow = !n.startsWith('flat_');
@@ -167,6 +195,70 @@ export class PlayerView {
     this.j.j_shoulder_R.rotation.order = 'YZX';
     this.j.j_shoulder_L.rotation.order = 'YZX';
     this.skinLimbs();
+    this.mergeJoints();
+    this.blob = contactShadow();
+    this.root.add(this.blob);
+    this.owned.push(this.blob.geometry, this.blob.material as THREE.Material);
+  }
+
+  private blob: THREE.Mesh;
+
+  /** Take the player out of the scene and free what this copy made (the template stays). */
+  dispose(): void {
+    this.root.removeFromParent();
+    for (const o of this.owned) o.dispose();
+    this.owned = [];
+  }
+
+  /**
+   * Fewer draw calls: everything rigidly attached to the same joint becomes one mesh, its
+   * colors baked into the vertices (grouped by surface: matte, glossy, metal). Roughly halves
+   * the cost of drawing a player, and of its shadow.
+   */
+  private mergeJoints(): void {
+    const mats = new Map<string, THREE.Material>();
+    for (const name of JOINTS) {
+      const joint = this.j[name];
+      const groups = new Map<string, THREE.Mesh[]>();
+      for (const child of joint.children) {
+        const m = child as THREE.Mesh;
+        if (!m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || !m.visible) continue;
+        const mat = m.material as THREE.MeshStandardMaterial;
+        const key = mat.metalness > 0.5 ? 'metal' : mat.roughness < 0.5 ? 'gloss' : 'matte';
+        groups.set(key, [...(groups.get(key) ?? []), m]);
+      }
+      for (const [key, list] of groups) {
+        if (list.length < 2) continue;
+        const geos = list.map((m) => {
+          m.updateMatrix();
+          const g = m.geometry.clone().applyMatrix4(m.matrix);
+          const c = (m.material as THREE.MeshStandardMaterial).color;
+          const n = g.attributes.position.count;
+          const rgb = new Float32Array(n * 3);
+          for (let i = 0; i < n; i++) rgb.set([c.r, c.g, c.b], i * 3);
+          g.setAttribute('color', new THREE.BufferAttribute(rgb, 3));
+          return g;
+        });
+        let mat = mats.get(key);
+        if (!mat) {
+          mat = surfaceMaterial(0xffffff, {
+            vertexColors: true,
+            roughness: key === 'matte' ? 0.62 : 0.25,
+            metalness: key === 'metal' ? 0.8 : 0,
+          });
+          mats.set(key, mat);
+          this.owned.push(mat);
+        }
+        const merged = new THREE.Mesh(mergeGeometries(geos)!, mat);
+        this.owned.push(merged.geometry);
+        for (const g of geos) g.dispose();
+        merged.name = `merged_${key}_${name}`;
+        merged.castShadow = true;
+        merged.receiveShadow = true;
+        for (const m of list) joint.remove(m);
+        joint.add(merged);
+      }
+    }
   }
 
   /** Swap each one-piece limb for a skinned copy that bends with its joints. */
@@ -219,6 +311,7 @@ export class PlayerView {
     this.yaw += (targetYaw - this.yaw) * (1 - Math.exp(-8 * dt));
     const yawOffset = this.yaw - player.yaw;
     this.root.position.copy(player.pos);
+    this.blob.scale.setScalar(1);
     this.root.rotation.y = this.yaw;
 
     // Steps follow distance covered (no skating): longer strides at higher speed.
@@ -291,11 +384,14 @@ export class PlayerView {
     if (party >= 0 && party < 3.5 && !player.swing) {
       const bounce = Math.abs(Math.sin(party * 7));
       this.root.position.y = bounce * 0.55;
+      this.blob.scale.setScalar(1 - bounce * 0.35);
       j.j_shoulder_R.rotation.set(0, 0, 2.7 + bounce * 0.2);
       j.j_shoulder_L.rotation.set(0, 0, -2.7 - bounce * 0.2);
       j.j_elbow_R.rotation.set(0.2, 0, 0);
       j.j_elbow_L.rotation.set(0.2, 0, 0);
     }
+    // The contact shadow stays on the ground when the player hops.
+    this.blob.position.y = 0.04 - this.root.position.y / this.root.scale.y;
   }
 }
 

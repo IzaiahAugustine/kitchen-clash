@@ -136,7 +136,7 @@ export class OnlineGuest implements GameMode {
 
   dispose(): void {
     clearTimeout(this.readyTimer);
-    for (const [, v] of this.views) this.w.scene.remove(v.root);
+    for (const [, v] of this.views) v.dispose();
     this.w.fx?.setLanding(null);
     this.w.fx?.setServeBox(null);
   }

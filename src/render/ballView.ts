@@ -90,7 +90,11 @@ export class BallView {
 
   private drawOffset = new THREE.Vector3();
 
-  update(ball: Ball, dt: number, camera?: THREE.Camera): void {
+  /**
+   * @param ahead Seconds of real time past the last physics step: the ball is drawn that far
+   * along its path, so it moves evenly on any screen refresh rate.
+   */
+  update(ball: Ball, dt: number, camera?: THREE.Camera, ahead = 0): void {
     if (!ball.inPlay) this.drawOffset.set(0, 0, 0);
     else this.drawOffset.multiplyScalar(Math.exp(-dt * 12));
     const o = this.drawOffset;
@@ -99,7 +103,12 @@ export class BallView {
     const px = this.mesh.position.x;
     const py = this.mesh.position.y;
     const pz = this.mesh.position.z;
-    this.mesh.position.set(ball.pos.x + o.x, Math.max(PHYS.ballRadius, ball.pos.y + o.y) + lift, ball.pos.z + o.z);
+    const a = ball.inPlay ? ahead : 0;
+    this.mesh.position.set(
+      ball.pos.x + ball.vel.x * a + o.x,
+      Math.max(PHYS.ballRadius, ball.pos.y + ball.vel.y * a + o.y) + lift,
+      ball.pos.z + ball.vel.z * a + o.z,
+    );
     if (ball.inPlay && dt > 0) {
       netStats.drawnFrames++;
       const moved = Math.hypot(this.mesh.position.x - px, this.mesh.position.y - py, this.mesh.position.z - pz);
@@ -118,7 +127,7 @@ export class BallView {
 
     const h = Math.max(0, ball.pos.y + o.y - PHYS.ballRadius);
     const s = 1 / (1 + h * 0.09);
-    this.shadow.position.set(ball.pos.x + o.x, 0.045, ball.pos.z + o.z);
+    this.shadow.position.set(this.mesh.position.x, 0.045, this.mesh.position.z);
     this.shadow.scale.setScalar(0.6 + 0.4 * s);
     (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.45 * s;
 

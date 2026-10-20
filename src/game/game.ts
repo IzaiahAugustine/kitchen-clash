@@ -1067,7 +1067,10 @@ export class Game {
         this.option('Music', vols, () => s.musicVolume, (i) => (s.musicVolume = i)),
         this.option('Announcer', ['Off', 'On'], () => (s.announcer ? 1 : 0), (i) => (s.announcer = !!i)),
         this.option('Replays', ['Off', 'On'], () => (s.replays ? 1 : 0), (i) => (s.replays = !!i)),
-        this.option('Graphics', ['Standard', 'High'], () => (s.graphics === 'high' ? 1 : 0), (i) => (s.graphics = i ? 'high' : 'standard')),
+        this.option('Graphics', ['Auto', 'Standard', 'High'], () => ['auto', 'standard', 'high'].indexOf(s.graphics), (i) => {
+          s.graphics = (['auto', 'standard', 'high'] as const)[i];
+          s.graphicsPicked = true;
+        }),
         { label: 'Privacy policy', action: () => window.open('privacy.html', '_blank', 'noopener') },
         { label: 'Back', primary: true, action: back },
       ],
@@ -1228,7 +1231,7 @@ export class Game {
     this.cam.setPreset(s.camera);
     this.sound.setVolumes(s.sfxVolume, s.musicVolume);
     this.sound.announcer = s.announcer;
-    this.stage.setHighQuality(s.graphics === 'high' || hasDebugFlag('hifx'));
+    this.stage.setGraphics(hasDebugFlag('hifx') ? 'high' : s.graphics);
   }
 
   /** Title art generated with Artlist, if it's been added to public/art/. */
@@ -1341,7 +1344,7 @@ export class Game {
 
     if (!frozen) mode.update(gameDt, this.time);
     const replaying = this.state === 'replay' && this.stepReplay(dt);
-    if (!replaying) ballView.update(ball, gameDt, this.cam.camera);
+    if (!replaying) ballView.update(ball, gameDt, this.cam.camera, gameDt > 0 ? this.accumulator : 0);
     if (this.state === 'playing' && gameDt > 0) {
       this.replay.record(this.time, ball);
       if (this.replayDue && this.time >= this.replayDue.to) this.startReplay();

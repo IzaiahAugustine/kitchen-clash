@@ -53,6 +53,20 @@ function weakDevice(renderer: THREE.WebGLRenderer): boolean {
   return slowGpu || (navigator.hardwareConcurrency ?? 8) <= 2;
 }
 
+/** A fast desktop GPU (Apple M-series Mac, NVIDIA, AMD Radeon, Intel Arc): High graphics by default. */
+function strongDevice(renderer: THREE.WebGLRenderer): boolean {
+  if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || weakDevice(renderer)) return false;
+  let gpu = '';
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  } catch {
+    return false;
+  }
+  return /apple m\d|nvidia|geforce|rtx|radeon|intel.*arc/i.test(gpu) && (navigator.hardwareConcurrency ?? 4) >= 8;
+}
+
 /**
  * Renderer, scene, sky and lights. Resolution adapts to keep the frame rate smooth.
  * `?hifx` adds ambient occlusion (soft contact shadows) for fast GPUs.
@@ -65,6 +79,12 @@ export class Stage {
   /** A low-end device (or the quality ladder hit bottom): skip nice-to-have work like crowd animation detail. */
   lite = false;
   private composer: EffectComposer | null = null;
+  /** Fast GPU: Auto graphics means High. */
+  strong = false;
+  /** Auto turned High off because frames ran slow (stays off this session). */
+  private autoDropped = false;
+  /** High is on because of the Auto setting (so slow frames may turn it off). */
+  private autoHigh = false;
   private ao: GTAOPass | null = null;
   private camera: THREE.Camera | null = null;
   private ladder = qualityLadder();
@@ -81,6 +101,7 @@ export class Stage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     // Weak devices start low (smaller render, simpler shadows) instead of stuttering first.
     this.lite = weakDevice(this.renderer);
+    this.strong = strongDevice(this.renderer);
     if (this.lite) this.level = Math.max(0, this.ladder.findIndex((q) => q.pixelRatio <= 1.25 && q.shadowSize > 0));
     this.renderer.setPixelRatio(this.ladder[this.level].pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -122,6 +143,12 @@ export class Stage {
   setupPost(camera: THREE.Camera): void {
     this.camera = camera;
     this.setHighQuality(hasDebugFlag('hifx'));
+  }
+
+  /** Graphics setting: High always, Standard never, Auto on fast GPUs until frames run slow. */
+  setGraphics(mode: 'auto' | 'standard' | 'high'): void {
+    this.autoHigh = mode === 'auto' && this.strong && !this.autoDropped;
+    this.setHighQuality(mode === 'high' || this.autoHigh);
   }
 
   /** High quality adds ambient occlusion (soft contact shadows); needs a strong GPU. */
@@ -167,6 +194,15 @@ export class Stage {
     // Judge by the slower frames (80th percentile), so regular hitches count, not just the average.
     const typical = sorted[Math.floor(sorted.length * 0.8)];
     let next = this.level;
+    if (typical > 1 / 48 && this.autoHigh && this.composer) {
+      // Auto-High first gives up its ambient occlusion before anything else.
+      this.autoDropped = true;
+      this.autoHigh = false;
+      this.setHighQuality(false);
+      this.frameTimes = [];
+      this.lastAdjust = now;
+      return;
+    }
     if (typical > 1 / 48 && this.level < this.ladder.length - 1) {
       next = this.level + 1;
       this.holdUntil = now + 8000;
