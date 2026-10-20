@@ -142,6 +142,7 @@ export class PlayerView {
         (slot === 'cap' && palette.headwear !== 'cap') ||
         (slot === 'headband' && palette.headwear !== 'headband') ||
         (slot === 'crown' && palette.headwear !== 'crown') ||
+        (slot === 'spikes' && !palette.spikes) ||
         (slot === 'hair_tail' && palette.hairStyle !== 'ponytail') ||
         (slot === 'hair' && n.startsWith('ol_') && palette.hairStyle === 'shaved');
       if (hidden) {

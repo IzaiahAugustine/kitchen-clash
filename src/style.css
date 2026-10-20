@@ -363,6 +363,21 @@ body.touch .hud-panel { display: none; }
 .rival .dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--ink); flex: none; }
 .rival small { display: block; font-weight: 600; font-size: 12px; opacity: 0.8; }
 .rival .mark { margin-left: auto; font-size: 16px; }
+/* ---------------------------------------------------------------- career */
+.boss { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--bad); color: #fff; font-size: 11px; letter-spacing: 1px; vertical-align: 1px; }
+.career-card { margin: 4px 0 12px; padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); text-align: left; }
+.career-level { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.career-level b { font-family: 'Lilita One', sans-serif; font-size: 18px; color: var(--sun); white-space: nowrap; }
+.career-level small { opacity: 0.75; white-space: nowrap; }
+.xp-bar { flex: 1; height: 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.35); overflow: hidden; }
+.xp-bar span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #3dff7a, #a7e22e); }
+.career-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-top: 8px; font-weight: 800; font-size: 13px; }
+.career-stats div { display: flex; justify-content: space-between; align-items: center; }
+.pips { display: inline-flex; gap: 3px; }
+.pips i { width: 10px; height: 10px; border-radius: 3px; background: rgba(255, 255, 255, 0.15); }
+.pips i.on { background: var(--sun); box-shadow: 0 0 6px rgba(255, 210, 63, 0.6); }
+.career-gain { font-family: 'Lilita One', sans-serif; font-size: 18px; color: #3dff7a; margin: 2px 0 8px; }
+.career-gain b { color: var(--sun); }
 .unlock { margin: 6px 0 12px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 200, 61, 0.15); border: 2px solid var(--sun); font-weight: 800; }
 
 /* ---------------------------------------------------------------- control hints (key caps) */

@@ -87,11 +87,12 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'smash-50', name: 'Hammer', text: 'Hit 50 smashes', reward: 50 },
   { id: 'online-win', name: 'Friendly Rivalry', text: 'Win an online match', reward: 50 },
   { id: 'champion', name: 'Pickle Champion', text: 'Win the Tournament', reward: 200 },
+  { id: 'zilla', name: 'Zilla Slayer', text: 'Beat Dinkzilla in Career', reward: 250 },
 ];
 
 /** What kind of match was played (coins and some achievements depend on it). */
 export interface MatchContext {
-  kind: 'quick' | 'tournament' | 'online';
+  kind: 'quick' | 'tournament' | 'online' | 'career';
   /** The opponent's level (tournament rivals count as medium). */
   opponent: Difficulty;
 }
@@ -102,7 +103,7 @@ const LEVEL_PAY: Record<Difficulty, number> = { easy: 1, medium: 1.5, hard: 2 };
 export function coinsForMatch(r: MatchResult, youWon: boolean, ctx: MatchContext): number {
   const you = r.youTeam ?? 0;
   const base = 10 + (youWon ? 25 : 0) + r.points[you] * 2 + Math.min(20, r.perfects);
-  const scale = ctx.kind === 'tournament' ? 2 : ctx.kind === 'online' ? 1.5 : LEVEL_PAY[ctx.opponent];
+  const scale = ctx.kind === 'tournament' ? 2 : ctx.kind === 'online' || ctx.kind === 'career' ? 1.5 : LEVEL_PAY[ctx.opponent];
   return Math.round(base * scale);
 }
 

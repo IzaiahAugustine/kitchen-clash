@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { netStats } from '../net/stats';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { parseDifficulty, type Difficulty } from '../ai/difficulty';
+import { parseDifficulty, type AiProfile, type Difficulty } from '../ai/difficulty';
+import type { Palette } from '../players/palette';
 import { Sound } from '../audio/sound';
 import { ArcadeCamera } from '../camera/arcadeCamera';
 import { BallLab } from '../debug/ballLab';
@@ -21,7 +22,7 @@ import { Menu, type MenuScreen } from '../ui/menu';
 import { Scoreboard } from '../ui/scoreboard';
 import { Coach } from '../ui/coach';
 import { debugFlag, hasDebugFlag } from './debugFlags';
-import { MatchMode, type Controller, type MatchResult } from './matchMode';
+import { MatchMode, type Controller, type MatchOptions, type MatchResult } from './matchMode';
 import type { GameMode, World } from './mode';
 import { PracticeMode } from './practiceMode';
 import { Replay } from './replay';
@@ -31,6 +32,7 @@ import { OnlineGuest } from '../net/onlineGuest';
 import { TutorialMode } from './tutorialMode';
 import { ShowroomMode } from './showroomMode';
 import { RIVALS, rewardsFor } from './tournament';
+import { CAREER, LEAGUES, MAX_STAT, STATS, addXp, boosts, upgrade, xpForMatch, xpToNext, type CareerOpponent } from './career';
 import { VENUES, VENUE_ORDER, VenueDresser, type VenueId } from '../render/venues';
 import {
   CAP_COLORS,
@@ -120,6 +122,7 @@ export class Game {
   private current:
     | { near: Controller; far: Difficulty; doubles: boolean }
     | { tournament: number }
+    | { career: number }
     | 'practice'
     | 'tutorial'
     | 'online' = {
@@ -307,8 +310,13 @@ export class Game {
     this.venues?.apply(VENUES[id]);
   }
 
-  private matchMode(near: Controller, far: Difficulty, doubles: boolean, rival?: number): MatchMode {
-    const r = rival !== undefined ? RIVALS[rival] : null;
+  private matchMode(
+    near: Controller,
+    far: Difficulty,
+    doubles: boolean,
+    r: { name: string; palette: Palette; profile: AiProfile; target: number } | null = null,
+    extra: Partial<MatchOptions> = {},
+  ): MatchMode {
     const m = new MatchMode(this.world, this.template, this.scoreboard, {
       scoring: {
         ...DEFAULT_SCORING,
@@ -322,6 +330,7 @@ export class Game {
       farPalette: r?.palette,
       farProfile: r?.profile,
       names: r ? ['YOU', r.name.toUpperCase()] : undefined,
+      ...extra,
     });
     this.scoreboard.setNames(m.names);
     m.onGameOver = (r) => this.showResults(r);
@@ -461,12 +470,154 @@ export class Game {
   private startTournamentMatch(i: number): void {
     this.current = { tournament: i };
     this.setVenue(RIVALS[i].venue);
-    const m = this.matchMode('human', 'medium', false, i);
+    const m = this.matchMode('human', 'medium', false, RIVALS[i]);
     this.setMode(m);
     this.track(m, 0, { kind: 'tournament', opponent: 'medium' });
     this.highlights(m);
     m.startCommentary();
     this.enterPlaying();
+  }
+
+  // ---------------------------------------------------------------- career
+
+  /** Career hub: your level and stats, and the league ladder. */
+  private showCareer(focus = -1): void {
+    const c = this.settings.career;
+    const done = c.match >= CAREER.length;
+    const at = Math.min(c.match, CAREER.length - 1);
+    const lg = CAREER[at].league;
+    const rows = CAREER.filter((o) => o.league === lg)
+      .map((o) => {
+        const i = CAREER.indexOf(o);
+        const cls = i < c.match ? 'done' : i === c.match ? 'next' : 'locked';
+        const mark = i < c.match ? '✓' : i === c.match ? '▶' : '🔒';
+        return `<div class="rival ${cls}"><span class="dot" style="background:${o.palette.shirt}"></span>
+          <div>${o.boss ? '<b class="boss">BOSS</b> ' : ''}${o.name}<small>${i <= c.match ? o.style : '???'}</small></div><span class="mark">${mark}</span></div>`;
+      })
+      .join('');
+    this.menu.show({
+      variant: 'title',
+      focus,
+      header: `<div class="menu-headline">${done ? '🏆 Career complete!' : 'Career'}</div>
+        <div class="menu-sub">${done ? 'You beat Dinkzilla. Replay any league boss to keep earning XP.' : `${LEAGUES[lg].name} · ${VENUES[LEAGUES[lg].venue].name} · match ${c.match + 1} of ${CAREER.length}`}</div>
+        ${this.careerCard()}
+        <div class="rivals">${rows}</div>`,
+      items: [
+        done
+          ? { label: '▶ Rematch Dinkzilla', primary: true, action: () => this.showCareerIntro(CAREER.length - 1) }
+          : { label: `▶ Play ${CAREER[c.match].name}`, primary: true, action: () => this.showCareerIntro(c.match) },
+        { label: c.points ? `⬆ Upgrade (${c.points} point${c.points > 1 ? 's' : ''} to spend)` : 'Upgrades', action: () => this.showUpgrades() },
+        { label: 'My Player & Shop', action: () => this.showMyPlayer(() => this.showCareer()) },
+        { label: 'Back', action: () => this.showTitle() },
+      ],
+      back: () => this.showTitle(),
+    });
+  }
+
+  /** Level, XP bar and the four stats as pips. */
+  private careerCard(): string {
+    const c = this.settings.career;
+    const need = xpToNext(c.level);
+    const pips = (n: number) => Array.from({ length: MAX_STAT }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
+    return `<div class="career-card">
+      <div class="career-level"><b>Level ${c.level}</b><span class="xp-bar"><span style="width:${Math.round((100 * c.xp) / need)}%"></span></span><small>${c.xp}/${need} XP</small></div>
+      <div class="career-stats">${STATS.map((st) => `<div><span>${st.name}</span><span class="pips">${pips(c.stats[st.id])}</span></div>`).join('')}</div>
+    </div>`;
+  }
+
+  private showUpgrades(focus = 0): void {
+    const c = this.settings.career;
+    this.menu.show({
+      variant: 'title',
+      focus,
+      header: `<div class="menu-headline">Upgrades</div>
+        <div class="menu-sub">${c.points ? `${c.points} point${c.points > 1 ? 's' : ''} to spend. Level up in career matches to earn more.` : 'No points right now. Level up in career matches to earn more.'}</div>
+        ${this.careerCard()}`,
+      items: [
+        ...STATS.map((st, i) => ({
+          label: c.stats[st.id] >= MAX_STAT ? `${st.name}: maxed ✓` : `${c.points ? '⬆ ' : ''}${st.name} · ${st.text}`,
+          action: () => {
+            if (!upgrade(c, st.id)) {
+              this.world.hud.flash(c.stats[st.id] >= MAX_STAT ? 'Already maxed' : 'No points to spend', 'bad', 1200, 'Win career matches to level up');
+              return;
+            }
+            saveSettings(this.settings);
+            this.sound.play('click', { volume: 0.9, pitch: 1.6 });
+            this.world.hud.flash(`${st.name} up!`, 'good', 1100, `${st.name} is now level ${c.stats[st.id]}`);
+            this.showUpgrades(i);
+          },
+        })),
+        { label: 'Back', primary: !c.points, action: () => this.showCareer() },
+      ],
+      back: () => this.showCareer(),
+    });
+  }
+
+  private showCareerIntro(i: number): void {
+    const o = CAREER[i];
+    const lg = LEAGUES[o.league];
+    this.menu.show({
+      variant: 'title',
+      header: `<div class="menu-sub">${lg.name} · ${VENUES[o.venue].name}${o.boss ? ' · <b class="boss">BOSS</b>' : ''}</div>
+        <div class="menu-headline">${o.name}</div>
+        <div class="menu-sub">${o.style}</div>
+        <div class="unlock">Tip: ${o.tip}</div>
+        <div class="menu-sub">First to ${o.target}${o.reward ? ` · Win to unlock: ${o.reward.label}` : ''}</div>`,
+      items: [
+        { label: '▶ Start match', primary: true, action: () => this.startCareerMatch(i) },
+        { label: 'Back', action: () => this.showCareer() },
+      ],
+      back: () => this.showCareer(),
+    });
+  }
+
+  private startCareerMatch(i: number): void {
+    const o: CareerOpponent = CAREER[i];
+    this.current = { career: i };
+    this.setVenue(o.venue);
+    const m = this.matchMode('human', 'hard', false, o, {
+      nearBoost: boosts(this.settings.career.stats),
+      farBoost: o.edge,
+      farScale: o.scale,
+    });
+    this.setMode(m);
+    this.track(m, 0, { kind: 'career', opponent: 'hard' });
+    this.highlights(m);
+    m.startCommentary();
+    this.enterPlaying();
+  }
+
+  /** After a career match: XP, level-ups, moving up the ladder and boss rewards. */
+  private careerResults(i: number, r: MatchResult, youWon: boolean): { html: string; items: MenuScreen['items'] } {
+    const c = this.settings.career;
+    const o = CAREER[i];
+    const xp = xpForMatch(youWon, r.points[0], r.perfects, !!o.boss);
+    const levels = addXp(c, xp);
+    let html = `<div class="career-gain">+${xp} XP${levels ? ` · <b>LEVEL UP!</b> Level ${c.level} (+${levels} upgrade point${levels > 1 ? 's' : ''})` : ''}</div>`;
+    if (youWon && i === c.match) {
+      c.match = i + 1;
+      if (o.reward) {
+        for (const id of o.reward.ids) if (!this.settings.unlocked.includes(id)) this.settings.unlocked.push(id);
+        html += `<div class="unlock">Unlocked: ${o.reward.label}! Wear it in My Player.</div>`;
+      }
+      if (c.match === CAREER.length) {
+        html += '<div class="unlock">🏆 You beat Dinkzilla! Career complete.</div>';
+        this.progress.achieve('zilla');
+      }
+      else if (CAREER[c.match].league !== o.league) html += `<div class="unlock">Promoted to the ${LEAGUES[CAREER[c.match].league].name}!</div>`;
+    }
+    saveSettings(this.settings);
+    const next = c.match < CAREER.length ? c.match : null;
+    const items: MenuScreen['items'] = [
+      youWon && next !== null
+        ? { label: `▶ Next: ${CAREER[next].name}`, primary: true, action: () => this.showCareerIntro(next) }
+        : youWon
+          ? { label: '▶ Career', primary: true, action: () => this.showCareer() }
+          : { label: '▶ Try again', primary: true, action: () => this.startCareerMatch(i) },
+      ...(c.points ? [{ label: `⬆ Upgrade (${c.points} point${c.points > 1 ? 's' : ''})`, action: () => this.showUpgrades() }] : []),
+      { label: 'Career', action: () => this.showCareer() },
+    ];
+    return { html, items };
   }
 
   // ---------------------------------------------------------------- coins: shop, challenges
@@ -821,6 +972,7 @@ export class Game {
     if (this.current === 'tutorial') this.startTutorial();
     else if (this.current === 'practice') this.startPractice();
     else if ('tournament' in this.current) this.startTournamentMatch(this.current.tournament);
+    else if ('career' in this.current) this.startCareerMatch(this.current.career);
     else this.startMatch(this.current.near, this.current.far, this.current.doubles);
   }
 
@@ -851,6 +1003,7 @@ export class Game {
       header: `<div class="coin-badge">${coinIcon()} ${this.progress.state.coins}</div><div class="logo">DINK<span class="accent">ZILLA!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
         { label: '▶ Play vs AI', primary: s.tutorialDone, action: () => this.showQuickPlay() },
+        { label: `🏅 Career${s.career.match >= CAREER.length ? ' ✓' : s.career.match ? ` (${s.career.match}/${CAREER.length})` : ''}`, action: () => this.showCareer() },
         { label: `🏆 Tournament${s.tourneyWins >= RIVALS.length ? ' ✓' : s.tourneyWins ? ` (${s.tourneyWins}/${RIVALS.length})` : ''}`, action: () => this.showTournament() },
         { label: 'Play Online', action: () => this.showOnline() },
         { label: `Challenges (${this.progress.state.daily.done.filter(Boolean).length}/3 today)`, action: () => this.showChallenges() },
@@ -860,7 +1013,6 @@ export class Game {
           primary: !s.tutorialDone,
           action: () => this.startTutorial(),
         },
-        { label: 'Watch AI vs AI', action: () => this.showWatchSetup() },
         { label: 'Practice', action: () => this.startPractice() },
         { label: 'Settings', action: () => this.showSettings(() => this.showTitle()) },
       ],
@@ -878,6 +1030,7 @@ export class Game {
         this.option('Difficulty', LEVELS.map(cap), () => LEVELS.indexOf(s.difficulty), (i) => (s.difficulty = LEVELS[i])),
         this.option('Court', VENUE_ORDER.map((v) => VENUES[v].name), () => VENUE_ORDER.indexOf(s.court), (i) => (s.court = VENUE_ORDER[i])),
         { label: '▶ Start', primary: true, action: () => this.startMatch('human', s.difficulty) },
+        { label: 'Watch AI vs AI', action: () => this.showWatchSetup() },
         { label: 'Back', action: () => this.showTitle() },
       ],
       back: () => this.showTitle(),
@@ -984,6 +1137,11 @@ export class Game {
         { label: 'My Player', action: () => this.showMyPlayer(() => this.showTournament()) },
         { label: 'Tournament', action: () => this.showTournament() },
       ];
+    }
+    if (typeof cur === 'object' && 'career' in cur) {
+      const res = this.careerResults(cur.career, r, !!youWon);
+      unlockLine = res.html;
+      tourneyItems = res.items;
     }
     // Coins for the match (and any challenges/achievements it finished).
     let earned = 0;

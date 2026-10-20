@@ -20,6 +20,8 @@ export interface Palette {
   paddle: string;
   paddle_edge: string;
   grip: string;
+  /** Dinkzilla's spikes and tail, in this color (nobody else has them). */
+  spikes?: string;
 }
 
 export const PALETTES = {

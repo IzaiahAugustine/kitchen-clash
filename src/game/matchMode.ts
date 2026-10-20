@@ -115,6 +115,11 @@ export interface MatchOptions {
   /** Tournament rival: their look and personality. */
   farPalette?: Palette;
   farProfile?: AiProfile;
+  /** Career: your upgrades (multipliers, 1 = normal). */
+  nearBoost?: { speed: number; power: number; touch: number; reach: number };
+  /** Career boss: their edge, and how much bigger they're drawn. */
+  farBoost?: { power: number; reach: number };
+  farScale?: number;
 }
 
 export const DEFAULT_MATCH: MatchOptions = { scoring: DEFAULT_SCORING, near: 'human', far: 'medium' };
@@ -247,6 +252,7 @@ export class MatchMode implements GameMode {
     this.teams = [make(0, opts.near), make(1, opts.far)];
     this.seats = [...this.teams[0], ...this.teams[1]];
     this.teamNames = opts.names ?? [size === 2 && opts.near === 'human' ? 'YOU + CPU' : label(opts.near), label(opts.far)];
+    this.applyBoosts();
     this.markers = new BounceMarkers(w.scene);
     this.views = template
       ? this.seats.map(({ player }) => {
@@ -255,7 +261,26 @@ export class MatchMode implements GameMode {
           return [player, v] as [Player, PlayerView];
         })
       : [];
+    if (opts.farScale) this.views.find(([p]) => p === this.teams[1][0].player)?.[1].root.scale.setScalar(opts.farScale);
     this.newGame();
+  }
+
+  /** Career upgrades for you, and a boss's edge. */
+  private applyBoosts(): void {
+    const you = this.teams[0][0].player;
+    const b = this.opts.nearBoost;
+    if (b && this.opts.near === 'human') {
+      you.maxSpeed *= b.speed;
+      you.power = b.power;
+      you.touch = b.touch;
+      you.reach = b.reach;
+    }
+    const e = this.opts.farBoost;
+    if (e) {
+      const boss = this.teams[1][0].player;
+      boss.power = e.power;
+      boss.reach = e.reach;
+    }
   }
 
   /** Display names for the two teams. */
@@ -547,7 +572,7 @@ export class MatchMode implements GameMode {
       const contact = incoming
         ? chooseHumanContact(p, this.query(MAX_EARLY_LEAD + 0.3), ball.flight, this.referee.mustLetBounce)
         : null;
-      const swing = beginSwing(button, time, contact);
+      const swing = beginSwing(button, time, contact, { touch: p.touch });
       p.swing = swing;
       if (swing.note) this.w.hud.tag(swing.note, 'bad', overHead(p));
       // Online: decide the shot now so the friend's screen can play it at the same instant.

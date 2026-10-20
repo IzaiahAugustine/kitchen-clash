@@ -2,6 +2,7 @@ import type { Difficulty } from '../ai/difficulty';
 import { DEFAULT_LOOK, type Look } from '../players/look';
 import type { VenueId } from '../render/venues';
 import type { ScoringMode } from '../rules/scoring';
+import { NEW_CAREER, type CareerState } from './career';
 import { NEW_PROGRESS, type ProgressState } from './progress';
 
 export type CameraPreset = 'close' | 'classic' | 'wide';
@@ -40,6 +41,8 @@ export interface Settings {
   playSeconds: number;
   /** Coins, challenges, achievements. */
   progress: ProgressState;
+  /** Career: next opponent, level, XP and upgrades. */
+  career: CareerState;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -62,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   court: 'park',
   playSeconds: 0,
   progress: NEW_PROGRESS,
+  career: NEW_CAREER,
 };
 
 /** A fresh copy (the defaults' nested objects must never be shared or changed). */
@@ -71,6 +75,7 @@ function fresh(saved: Partial<Settings> = {}): Settings {
     ...DEFAULT_SETTINGS,
     ...saved,
     unlocked: [...(saved.unlocked ?? [])],
+    career: { ...NEW_CAREER, ...saved.career, stats: { ...NEW_CAREER.stats, ...saved.career?.stats } },
     progress: {
       ...NEW_PROGRESS,
       ...p,

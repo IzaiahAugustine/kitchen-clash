@@ -1,8 +1,8 @@
 import type { HairStyle, Headwear, Palette } from './palette';
 
 /**
- * One choice in the character creator. `unlock` items must be earned first: in the tournament,
- * or (with a `price`) bought with coins in the shop.
+ * One choice in the character creator. `unlock` items must be earned first: in the tournament
+ * or career, or (with a `price`) bought with coins in the shop.
  */
 export interface LookOption {
   name: string;
@@ -42,6 +42,8 @@ export const SHIRTS: LookOption[] = [
   { name: 'Black', color: '#26232e', unlock: 'buy-shirt-black', price: 120 },
   { name: 'Lime', color: '#a7e22e', unlock: 'buy-shirt-lime', price: 150 },
   { name: 'Coral', color: '#ff7f6e', unlock: 'buy-shirt-coral', price: 150 },
+  { name: 'Royal Pro', color: '#1846c9', unlock: 'career-3' },
+  { name: 'Zilla', color: '#46c35a', unlock: 'career-4' },
 ];
 export const SHORTS: LookOption[] = [
   { name: 'Charcoal', color: '#2b2d42' },
@@ -51,6 +53,7 @@ export const SHORTS: LookOption[] = [
   { name: 'White', color: '#eeeeee' },
   { name: 'Red', color: '#b8322a', unlock: 'buy-shorts-red', price: 80 },
   { name: 'Royal', color: '#2d5bd8', unlock: 'buy-shorts-royal', price: 80 },
+  { name: 'Teal', color: '#1f9e8f', unlock: 'career-1' },
 ];
 export const CAP_COLORS: LookOption[] = [
   { name: 'Yellow', color: '#ffd23f' },
@@ -61,6 +64,7 @@ export const CAP_COLORS: LookOption[] = [
   { name: 'Purple', color: '#7b2ff7', unlock: 'cap-purple' },
   { name: 'Orange', color: '#ff8c1a', unlock: 'buy-cap-orange', price: 80 },
   { name: 'Pink', color: '#ff8fab', unlock: 'buy-cap-pink', price: 80 },
+  { name: 'Sunset', color: '#ff5f45', unlock: 'career-2' },
 ];
 export const PADDLES: LookOption[] = [
   { name: 'Red', color: '#e63946' },
@@ -74,6 +78,7 @@ export const PADDLES: LookOption[] = [
   { name: 'Pink', color: '#ff5fa2', unlock: 'buy-paddle-pink', price: 150 },
   { name: 'Purple', color: '#8a2be2', unlock: 'buy-paddle-purple', price: 200 },
   { name: 'Neon', color: '#39ff14', unlock: 'buy-paddle-neon', price: 250 },
+  { name: 'Zilla', color: '#2bd94a', unlock: 'career-4' },
 ];
 export const HAIR_STYLES: { name: string; id: HairStyle }[] = [
   { name: 'Short', id: 'short' },

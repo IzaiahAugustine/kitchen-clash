@@ -16,12 +16,15 @@ export const MIN_CONTACT_HEIGHT = 0.6;
 /** Overhead reach with the paddle: high balls can be volleyed (smashed) out of the air. */
 export const MAX_CONTACT_HEIGHT = 8;
 
-/** @param spin Spin shots demand the sharpest timing in the game. */
-export function gradeTiming(lead: number, spin = false): Timing {
+/**
+ * @param spin Spin shots demand the sharpest timing in the game.
+ * @param touch Career Touch: widens the windows (1 = normal).
+ */
+export function gradeTiming(lead: number, spin = false, touch = 1): Timing {
   const d = lead - IDEAL_LEAD;
   const error = Math.abs(d);
-  if (error <= (spin ? SPIN_WINDOWS.perfect : 0.05)) return { grade: 'perfect', error };
-  if (error <= (spin ? SPIN_WINDOWS.good : 0.12)) return { grade: 'good', error };
+  if (error <= (spin ? SPIN_WINDOWS.perfect : 0.05) * touch) return { grade: 'perfect', error };
+  if (error <= (spin ? SPIN_WINDOWS.good : 0.12) * touch) return { grade: 'good', error };
   return { grade: d > 0 ? 'early' : 'late', error };
 }
 
@@ -138,7 +141,7 @@ export function beginSwing(
   button: ShotButton,
   time: number,
   contact: Contact | null,
-  opts: { kind?: ShotKind; feed?: boolean; timing?: Timing } = {},
+  opts: { kind?: ShotKind; feed?: boolean; timing?: Timing; touch?: number } = {},
 ): Swing {
   let note: string | undefined;
   if (contact && contact.t > MAX_EARLY_LEAD) {
@@ -175,7 +178,7 @@ export function beginSwing(
     contactAt,
     endAt: contactAt + 0.3,
     contact,
-    timing: opts.timing ?? gradeTiming(contact.t, button === 'spin'),
+    timing: opts.timing ?? gradeTiming(contact.t, button === 'spin', opts.touch),
     poses: buildSwingPoses(styleFor(kind), contact.hand, local, g.crouch),
     resolved: false,
     feed: opts.feed,
@@ -187,7 +190,7 @@ export function beginSwing(
  * farther is a weak stretched shot, beyond that the ball gets past them.
  */
 export function reachAtContact(player: Player): 'ok' | 'stretch' | 'miss' {
-  const gap = player.contactGap();
+  const gap = player.contactGap() / player.reach;
   if (gap <= LUNGE_REACH) return 'ok';
   return gap <= STRETCH_REACH ? 'stretch' : 'miss';
 }
@@ -221,6 +224,8 @@ export interface ShotReport {
 }
 
 /** Hits the ball: plans the shot from aim + timing, solves the launch, and sends it. */
+const POWER_KINDS = new Set<ShotKind>(['drive', 'smash', 'speedup', 'roll']);
+
 export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim): ShotReport {
   const kind = swing.kind as ShotKind;
   const spun = swing.button === 'spin';
@@ -237,10 +242,12 @@ export function executeShot(ball: Ball, player: Player, swing: Swing, aim: Aim):
       towardNet: -player.side * player.vel.z,
       volley: !!swing.contact && !swing.contact.bounced,
     });
+  // Career Power: drives, smashes and rolls get there sooner (plans made on a friend's screen are final).
+  const paced = !swing.plan && POWER_KINDS.has(kind) ? plan.flightTime / player.power : plan.flightTime;
   const sol = solveShot({
     from,
     target: plan.target,
-    flightTime: plan.flightTime,
+    flightTime: paced,
     spin: plan.spin,
     minNetClearance: plan.clearance,
   });

@@ -38,6 +38,7 @@ COLORS = {
     "headband": "#ffffff",
     "hair_tail": "#3b2414",
     "crown": "#ffc83d",
+    "spikes": "#a7e22e",
     "shoe": "#f5f5f5",
     "sole": "#ffffff",
     "sock": "#ffffff",
@@ -294,6 +295,28 @@ for i in range(6):
     ob = bpy.context.active_object
     ob.name = ob.data.name = f"ol_crown_point_{i}"
     _attach(ob, neck, (0.24 * math.cos(a), 1.1, 0.02 + 0.24 * math.sin(a)), "crown")
+
+# Dinkzilla only (the game hides these for everyone else): dorsal spikes down the back and
+# the back of the head, and a thick tail.
+for i, (y, z, h) in enumerate([(1.45, 0.33, 0.34), (1.1, 0.4, 0.42), (0.75, 0.37, 0.38), (0.4, 0.33, 0.32), (0.08, 0.36, 0.26)]):
+    bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.13, radius2=0.0, depth=h, location=(0, 0, 0))
+    ob = bpy.context.active_object
+    ob.name = ob.data.name = f"ol_spike_{i}"
+    ob.scale = (0.45, 1, 1)
+    _attach(ob, spine, (0, y, z + h * 0.35), "spikes", smooth=False, rotation=(math.radians(-60), 0, 0))
+for i, (y, z, h) in enumerate([(0.95, 0.3, 0.22), (0.72, 0.4, 0.2)]):
+    bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.09, radius2=0.0, depth=h, location=(0, 0, 0))
+    ob = bpy.context.active_object
+    ob.name = ob.data.name = f"ol_headspike_{i}"
+    ob.scale = (0.45, 1, 1)
+    _attach(ob, neck, (0, y, z + h * 0.3), "spikes", smooth=False, rotation=(math.radians(-55), 0, 0))
+loft("ol_tail", hips, [
+    (0.15, 0.2, 0.2, 0, -0.1),
+    (0.6, 0.17, 0.16, 0, -0.45),
+    (1.0, 0.12, 0.12, 0, -0.85),
+    (1.4, 0.07, 0.07, 0, -1.2),
+    (1.65, 0.02, 0.02, 0, -1.4),
+], "spikes", axis="z", segments=12)
 
 # ---------------------------------------------------------------- arms
 

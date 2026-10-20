@@ -67,6 +67,10 @@ export class Player {
   readonly yaw: number;
   /** Top sprint speed (ft/s). Side-shuffling and backpedaling are slower (see speedFactor). */
   maxSpeed = 14;
+  /** Career upgrades (1 = normal): shot pace, timing windows, lunge distance. */
+  power = 1;
+  touch = 1;
+  reach = 1;
   swing: Swing | null = null;
   /** Game time of the last split step (a little hop as the opponent hits). */
   splitStepAt = -1;
