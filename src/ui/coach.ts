@@ -5,6 +5,8 @@
 export class Coach {
   private el: HTMLDivElement;
   private last = '';
+  /** Phones and tablets: describe the on-screen buttons instead of keys. */
+  touch = false;
 
   constructor(root: HTMLElement) {
     this.el = document.createElement('div');
@@ -14,7 +16,10 @@ export class Coach {
 
   /** `what`: which strip to show, or null to hide it. */
   show(what: 'controls' | 'serve' | null): void {
-    const html = what === 'serve' ? SERVE : what === 'controls' ? CONTROLS : '';
+    const html = this.touch
+      ? what === 'serve' ? TOUCH_SERVE : what === 'controls' ? TOUCH_CONTROLS : ''
+      : what === 'serve' ? SERVE : what === 'controls' ? CONTROLS : '';
+    this.el.classList.toggle('coach-touch', this.touch);
     this.el.classList.toggle('hidden', !html);
     if (html && html !== this.last) {
       this.last = html;
@@ -34,6 +39,16 @@ const CONTROLS =
   group(key('K') + key('X'), 'Soft', 'soft') +
   group(key('L') + key('C'), 'Spin', 'spin') +
   group(key('P'), 'Pause');
+
+const pill = (text: string, cls: string) => `<span class="pill ${cls}">${text}</span>`;
+
+const TOUCH_CONTROLS =
+  `<div class="coach-line">👈 Drag on the left side to move</div>` +
+  `<div class="coach-line">${pill('HIT', 'drive')} drive &amp; dink · ${pill('SOFT', 'soft')} drop &amp; lob · ${pill('SPIN', 'spin')} spin</div>`;
+
+const TOUCH_SERVE =
+  `<div class="coach-title">Your serve!</div>` +
+  `<div class="coach-line">${pill('HIT', 'drive')} hard · ${pill('SOFT', 'soft')} safe · ${pill('SPIN', 'spin')} spin</div>`;
 
 const SERVE =
   `<div class="coach-title">Your serve!</div>` +

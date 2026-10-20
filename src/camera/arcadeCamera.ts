@@ -76,7 +76,9 @@ export class ArcadeCamera {
   update(dt: number, targetX: number, side: 1 | -1 = 1): void {
     const f = this.framing;
     const k = dt > 0 ? 1 - Math.exp(-2.5 * dt) : 1;
-    this.focusX += (targetX * 0.3 - this.focusX) * k;
+    // Portrait screens are narrow: keep the court centered instead of sliding with the player.
+    const follow = this.aspect < 0.8 ? 0.08 : 0.3;
+    this.focusX += (targetX * follow - this.focusX) * k;
     this.camera.position.set(this.focusX, f.height, side * f.back);
     this.camera.lookAt(this.focusX * 0.5, 0, side * f.lookZ);
     this.applyShake(dt);
@@ -97,7 +99,7 @@ export class ArcadeCamera {
     this.camera.aspect = aspect;
     const base = this.framing.fov;
     // Narrow / portrait screens widen the view so both sidelines stay visible.
-    this.baseFov = aspect < 1.3 ? Math.min(75, base * (1.3 / aspect) ** 0.85) : base;
+    this.baseFov = aspect < 1.3 ? Math.min(aspect < 0.8 ? 80 : 75, base * (1.3 / aspect) ** 0.85) : base;
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
   }

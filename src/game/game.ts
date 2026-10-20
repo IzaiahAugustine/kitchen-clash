@@ -196,6 +196,7 @@ export class Game {
       this.touch = new TouchControls(this.uiRoot);
       this.world.controls.touch = this.touch;
       this.menu.touch = true;
+      this.coach.touch = true;
       document.body.classList.add('touch');
     }
     this.progress = new Progress(this.settings.progress, () => saveSettings(this.settings));
