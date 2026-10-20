@@ -18,6 +18,10 @@ export interface Settings {
   /** 0..10 */
   sfxVolume: number;
   musicVolume: number;
+  /** Announcer call-outs ("Ace!", "Match point!"). */
+  announcer: boolean;
+  /** Slow-motion replays of great points. */
+  replays: boolean;
   /** High adds ambient occlusion (needs a strong GPU). */
   graphics: 'standard' | 'high';
   /** Finished (or skipped through) How to Play. */
@@ -47,6 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
   camera: 'close',
   sfxVolume: 8,
   musicVolume: 6,
+  announcer: true,
+  replays: true,
   graphics: 'standard',
   tutorialDone: false,
   name: '',

@@ -19,6 +19,10 @@ export interface Fx {
   shake(amount: number): void;
   /** Freeze the action for a moment (seconds) to sell a big hit. */
   hitstop(seconds: number): void;
+  /** Big-hit punch: a screen flash and a quick zoom (0..1). */
+  punch(amount: number): void;
+  /** Confetti over a spot (you won). */
+  confetti(at: THREE.Vector3): void;
 }
 
 /** Shared pieces every game mode works with. */

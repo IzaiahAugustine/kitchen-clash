@@ -12,6 +12,8 @@ Until a file is present, the game plays a synthesized version.
 
 | `click` | Menu click | Graphix - Snappy Button Click, Short (Cinemear) |
 | `music` | Menu music (loops) | Generated with Artlist |
+| `match` | Music during matches (loops bars 9–40) | Generated with Artlist (Lyria 3 Pro) |
+| `vo_*` | Announcer call-outs ("Ace!", "Match point!"…) | Generated with Artlist (voice "Showtime") |
 
 ## In use now
 

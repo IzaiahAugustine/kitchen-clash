@@ -28,6 +28,9 @@ export class ArcadeCamera {
   private aspect: number;
   private orbitAngle = 0;
   private shakeAmp = 0;
+  private baseFov = 44;
+  /** Zoom-in kick on big hits (0..1), easing back out. */
+  private punchAmt = 0;
 
   constructor(aspect: number) {
     this.aspect = aspect;
@@ -39,6 +42,18 @@ export class ArcadeCamera {
   /** Kick the camera (0..1); it settles quickly. */
   shake(amount: number): void {
     this.shakeAmp = Math.max(this.shakeAmp, amount);
+  }
+
+  /** A quick zoom toward the action that eases back (0..1). */
+  punch(amount: number): void {
+    this.punchAmt = Math.max(this.punchAmt, amount);
+  }
+
+  private applyPunch(dt: number): void {
+    if (this.punchAmt <= 0 && this.camera.fov === this.baseFov) return;
+    this.punchAmt = this.punchAmt < 0.005 ? 0 : this.punchAmt * Math.exp(-7 * dt);
+    this.camera.fov = this.baseFov * (1 - this.punchAmt * 0.09);
+    this.camera.updateProjectionMatrix();
   }
 
   private applyShake(dt: number): void {
@@ -65,6 +80,7 @@ export class ArcadeCamera {
     this.camera.position.set(this.focusX, f.height, side * f.back);
     this.camera.lookAt(this.focusX * 0.5, 0, side * f.lookZ);
     this.applyShake(dt);
+    this.applyPunch(dt);
   }
 
   /** Slow cinematic orbit around the court (title screen). */
@@ -81,7 +97,8 @@ export class ArcadeCamera {
     this.camera.aspect = aspect;
     const base = this.framing.fov;
     // Narrow / portrait screens widen the view so both sidelines stay visible.
-    this.camera.fov = aspect < 1.3 ? Math.min(75, base * (1.3 / aspect) ** 0.85) : base;
+    this.baseFov = aspect < 1.3 ? Math.min(75, base * (1.3 / aspect) ** 0.85) : base;
+    this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
   }
 }

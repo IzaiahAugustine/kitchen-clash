@@ -407,6 +407,42 @@ body.touch .hud-panel { display: none; }
 body.touch .coach { display: none; }
 .hud-panel:empty { display: none; }
 
+/* ---------------------------------------------------------------- big hits, instant replay */
+.screen-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 246, 214, 0.2) 30%, rgba(255, 214, 102, 0.95) 100%);
+}
+.screen-flash.go { animation: screen-flash 0.32s ease-out; }
+@keyframes screen-flash { from { opacity: var(--flash, 0.5); } to { opacity: 0; } }
+
+.replay { position: absolute; inset: 0; }
+.replaying .scoreboard, .replaying .hud-panel, .replaying .hud-tags { visibility: hidden; }
+.replay-bar { position: absolute; left: 0; right: 0; height: 9vh; background: #000; animation: replay-bar 0.3s ease-out; }
+.replay-bar.top { top: 0; }
+.replay-bar.bottom { bottom: 0; }
+@keyframes replay-bar { from { height: 0; } }
+.replay-tag {
+  position: absolute;
+  top: calc(9vh + 14px);
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 4px 10px;
+  border-radius: 10px;
+  background: rgba(27, 21, 48, 0.8);
+  border: 3px solid var(--ink);
+  font: 24px 'Lilita One', sans-serif;
+  letter-spacing: 2px;
+  color: var(--sun);
+  animation: coach-in 0.3s ease-out;
+}
+.replay-tag .rec { width: 12px; height: 12px; border-radius: 50%; background: var(--bad); animation: rec-blink 1s steps(2) infinite; }
+@keyframes rec-blink { 50% { opacity: 0; } }
+.replay-skip { position: absolute; bottom: calc(9vh + 12px); left: 50%; transform: translateX(-50%); font-weight: 800; font-size: 14px; opacity: 0.8; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); }
+
 /* ---------------------------------------------------------------- coins, shop, challenges */
 .coin {
   display: inline-block;

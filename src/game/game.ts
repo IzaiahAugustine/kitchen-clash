@@ -24,6 +24,7 @@ import { debugFlag, hasDebugFlag } from './debugFlags';
 import { MatchMode, type Controller, type MatchResult } from './matchMode';
 import type { GameMode, World } from './mode';
 import { PracticeMode } from './practiceMode';
+import { Replay } from './replay';
 import type { Room } from '../net/room';
 import { OnlineHost } from '../net/onlineHost';
 import { OnlineGuest } from '../net/onlineGuest';
@@ -50,7 +51,7 @@ import { loadSettings, saveSettings, type CameraPreset, type Settings } from './
 import { portal } from '../platform/portal';
 import { ACHIEVEMENTS, Progress, type MatchContext, type MatchTracker } from './progress';
 
-type AppState = 'title' | 'playing' | 'paused' | 'results';
+type AppState = 'title' | 'playing' | 'paused' | 'results' | 'replay';
 
 const LEVELS: Difficulty[] = ['easy', 'medium', 'hard'];
 type LookOptionList = LookOption[];
@@ -94,6 +95,16 @@ export class Game {
   private venueId: VenueId | null = null;
   private coach: Coach;
   private crowdTick = false;
+  /** Instant replays of great points (offline matches you play). */
+  private replay = new Replay();
+  /** A replay is due: of game time from..to, starting once the clock reaches `to`. */
+  private replayDue: { from: number; to: number } | null = null;
+  private lastReplayAt = -Infinity;
+  private replayStartedAt = 0;
+  private replayUi: HTMLDivElement;
+  private flashEl: HTMLDivElement;
+  private replaySide = 1;
+  private replayLook = new THREE.Vector3();
   private progress: Progress;
   /** Counting coins/challenges for the match being played (null when it doesn't count). */
   private tracker: MatchTracker | null = null;
@@ -147,6 +158,11 @@ export class Game {
         hitstop: (s) => {
           if (!this.mode?.online) this.freeze = Math.max(this.freeze, s);
         },
+        punch: (a) => {
+          this.cam.punch(a);
+          this.screenFlash(a);
+        },
+        confetti: (at) => this.effects.confetti(at),
       },
     };
     this.scoreboard = new Scoreboard(this.uiRoot, ['YOU', 'CPU'], ['#ff6b35', '#7b2ff7']);
@@ -156,6 +172,20 @@ export class Game {
       return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight };
     };
     this.coach = new Coach(this.uiRoot);
+    this.flashEl = document.createElement('div');
+    this.flashEl.className = 'screen-flash';
+    this.uiRoot.append(this.flashEl);
+    this.replayUi = document.createElement('div');
+    this.replayUi.className = 'replay hidden';
+    this.replayUi.innerHTML = `<div class="replay-bar top"></div><div class="replay-bar bottom"></div><div class="replay-tag"><span class="rec"></span>REPLAY</div><div class="replay-skip">${isTouchDevice() ? 'Tap' : 'Press any key'} to skip</div>`;
+    this.uiRoot.append(this.replayUi);
+    const skip = (e: Event) => {
+      if (this.state !== 'replay' || (e as KeyboardEvent).repeat) return;
+      // Ignore a key still held from the point itself.
+      if (performance.now() - this.replayStartedAt > 350) this.endReplay();
+    };
+    window.addEventListener('keydown', skip);
+    window.addEventListener('pointerdown', skip);
     this.menu = new Menu(this.uiRoot);
     this.menu.onNavigate = () => this.sound.play('click', { volume: 0.5 });
     // Phones and tablets get on-screen controls (`?touch` forces them for testing).
@@ -176,6 +206,8 @@ export class Game {
       this.sound.play('click', { volume: 0.8, pitch: 1.5 });
     };
     this.applySettings();
+    // Test hook for poking at the game from the browser console.
+    if (hasDebugFlag('debug')) (window as unknown as { __game: Game }).__game = this;
     portal.onMuteChange = () => this.sound.setMuted(portal.muted || this.adPlaying);
     portal.onAdStart = () => {
       this.adPlaying = true;
@@ -256,6 +288,9 @@ export class Game {
   private setMode(mode: GameMode): void {
     this.mode?.dispose?.();
     this.tracker = null;
+    this.endReplay();
+    this.replay.track([]);
+    this.replayDue = null;
     // A fast-forwarded or slow-mo AI match must never carry its speed into the next mode.
     this.timeScale = 1;
     if (this.orbit) this.toggleOrbit();
@@ -299,7 +334,77 @@ export class Game {
     const m = this.matchMode(near, far, doubles);
     this.setMode(m);
     if (near === 'human') this.track(m, 0, { kind: 'quick', opponent: far });
+    if (near === 'human') this.highlights(m);
+    m.startCommentary();
     this.enterPlaying();
+  }
+
+  /** A flash of light over the whole screen (a big hit). */
+  private screenFlash(amount: number): void {
+    const el = this.flashEl;
+    el.style.setProperty('--flash', String(Math.min(1, amount) * 0.55));
+    el.classList.remove('go');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('go');
+  }
+
+  /** Record this match so its best points get an instant replay. */
+  private highlights(m: MatchMode): void {
+    this.replay.track(m.replayNodes());
+    if (hasDebugFlag('replays')) m.replayEveryPoint = true;
+    m.onHighlight = () => {
+      // Not too often: a replay every point would get in the way.
+      if (!this.settings.replays || (performance.now() - this.lastReplayAt < 20000 && !hasDebugFlag('replays'))) return;
+      this.replayDue = { from: this.time - 3.2, to: this.time + 0.8 };
+    };
+  }
+
+  private startReplay(): void {
+    const due = this.replayDue!;
+    this.replayDue = null;
+    if (!this.replay.start(due.from, due.to)) return;
+    this.state = 'replay';
+    this.replayStartedAt = performance.now();
+    this.replaySide = Math.random() < 0.5 ? 1 : -1;
+    this.replayLook.set(Number.NaN, 0, 0);
+    this.effects.setLanding(null);
+    this.world.ballView.clearTrail();
+    this.replayUi.classList.remove('hidden');
+    this.uiRoot.classList.add('replaying');
+  }
+
+  private endReplay(): void {
+    if (!this.replay.playing && this.state !== 'replay') return;
+    this.replay.stop();
+    this.replayUi.classList.add('hidden');
+    this.uiRoot.classList.remove('replaying');
+    this.world.ballView.clearTrail();
+    this.lastReplayAt = performance.now();
+    if (this.state === 'replay') this.state = 'playing';
+  }
+
+  /** One frame of the replay: half speed, filmed from a TV camera on the sideline. */
+  private stepReplay(dt: number): boolean {
+    const b = this.replay.step(dt * 0.5);
+    if (!b) {
+      this.endReplay();
+      return false;
+    }
+    this.world.ballView.update(b as unknown as Ball, dt * 0.5, this.cam.camera);
+    const cam = this.cam.camera;
+    const k = Number.isNaN(this.replayLook.x) ? 1 : 1 - Math.exp(-3 * dt);
+    // Inside the fence (x 17), up high, sliding along the sideline with the ball but never
+    // parked right behind the net post.
+    let z = Math.max(-14, Math.min(14, b.pos.z * 0.6));
+    if (Math.abs(z) < 6) z = 6 * (Math.sign(b.pos.z) || 1);
+    const want = new THREE.Vector3(this.replaySide * 15.5, 8.5, z);
+    if (k === 1) {
+      cam.position.copy(want);
+      this.replayLook.set(b.pos.x * 0.3, 1.5, b.pos.z * 0.85);
+    } else cam.position.lerp(want, k);
+    this.replayLook.lerp(new THREE.Vector3(b.pos.x * 0.3, 1.5 + b.pos.y * 0.2, b.pos.z * 0.85), k);
+    cam.lookAt(this.replayLook);
+    return true;
   }
 
   /** Count this match for coins, challenges and achievements. */
@@ -359,6 +464,8 @@ export class Game {
     const m = this.matchMode('human', 'medium', false, i);
     this.setMode(m);
     this.track(m, 0, { kind: 'tournament', opponent: 'medium' });
+    this.highlights(m);
+    m.startCommentary();
     this.enterPlaying();
   }
 
@@ -513,7 +620,7 @@ export class Game {
     this.progress.achieve('tutorial');
     this.state = 'results';
     this.touch?.setVisible(false);
-    this.sound.setMusic(true);
+    this.sound.setMusic('menu');
     const s = this.settings;
     this.menu.show({
       header: `<div class="menu-headline">You're ready!</div><div class="menu-sub">Time to play a real match.</div>`,
@@ -620,6 +727,7 @@ export class Game {
     this.scoreboard.setNames(host.match.names);
     this.setMode(host);
     this.track(host.match, 0, { kind: 'online', opponent: 'medium' });
+    host.match.startCommentary();
     this.enterPlaying();
     this.world.hud.flash('Connected!', 'good', 1200, channel.kind === 'p2p' ? 'Direct connection' : 'Relayed connection (a bit slower)');
     console.info(`[KC] host connected via ${channel.kind}`);
@@ -724,7 +832,7 @@ export class Game {
     this.touch?.setVisible(true);
     this.world.hud.muted = false;
     this.scoreboard.setVisible(this.mode instanceof MatchMode);
-    this.sound.setMusic(false);
+    this.sound.setMusic('match');
   }
 
   /** Title screen, with a CPU match playing behind it. */
@@ -736,7 +844,7 @@ export class Game {
     this.setMode(this.matchMode('medium', 'hard', this.settings.format === 'doubles'));
     this.world.hud.muted = true;
     this.scoreboard.setVisible(false);
-    this.sound.setMusic(true);
+    this.sound.setMusic('menu');
     const s = this.settings;
     this.menu.show({
       variant: 'title',
@@ -803,6 +911,8 @@ export class Game {
         this.option('Camera', CAMERAS.map(cap), () => CAMERAS.indexOf(s.camera), (i) => (s.camera = CAMERAS[i])),
         this.option('Sound effects', vols, () => s.sfxVolume, (i) => (s.sfxVolume = i)),
         this.option('Music', vols, () => s.musicVolume, (i) => (s.musicVolume = i)),
+        this.option('Announcer', ['Off', 'On'], () => (s.announcer ? 1 : 0), (i) => (s.announcer = !!i)),
+        this.option('Replays', ['Off', 'On'], () => (s.replays ? 1 : 0), (i) => (s.replays = !!i)),
         this.option('Graphics', ['Standard', 'High'], () => (s.graphics === 'high' ? 1 : 0), (i) => (s.graphics = i ? 'high' : 'standard')),
         { label: 'Privacy policy', action: () => window.open('privacy.html', '_blank', 'noopener') },
         { label: 'Back', primary: true, action: back },
@@ -815,7 +925,7 @@ export class Game {
     this.state = 'paused';
     portal.gameplayStop();
     this.touch?.setVisible(false);
-    this.sound.setMusic(true);
+    this.sound.setMusic('menu');
     if (this.current === 'online') {
       this.menu.show({
         header: '<div class="menu-headline">Menu</div><div class="menu-sub">The match keeps going while you\'re here.</div>',
@@ -847,7 +957,7 @@ export class Game {
     // a match is a natural break: portals may show an ad here (offline matches are frozen on results)
     if (!this.mode?.online) void portal.commercialBreak();
     this.touch?.setVisible(false);
-    this.sound.setMusic(true);
+    this.sound.setMusic('menu');
     const youWon = r.humanTeam && r.winner === (r.youTeam ?? 0);
     const headline = youWon ? 'YOU WIN!' : r.humanTeam ? 'SO CLOSE!' : `${r.names[r.winner]} WINS`;
     // Tournament: a win against the next rival advances you and unlocks gear.
@@ -929,6 +1039,7 @@ export class Game {
     saveSettings(s);
     this.cam.setPreset(s.camera);
     this.sound.setVolumes(s.sfxVolume, s.musicVolume);
+    this.sound.announcer = s.announcer;
     this.stage.setHighQuality(s.graphics === 'high' || hasDebugFlag('hifx'));
   }
 
@@ -1020,7 +1131,7 @@ export class Game {
     }
 
     // You can't pause a friend: online matches keep running behind the menu.
-    const frozen = (this.state === 'paused' || this.state === 'results') && !this.mode?.online;
+    const frozen = (this.state === 'paused' || this.state === 'results' || this.state === 'replay') && !this.mode?.online;
     const stopped = this.freeze > 0;
     this.freeze = Math.max(0, this.freeze - dt);
     const gameDt = frozen || stopped ? 0 : dt * this.timeScale;
@@ -1041,13 +1152,20 @@ export class Game {
     }
 
     if (!frozen) mode.update(gameDt, this.time);
-    ballView.update(ball, gameDt, this.cam.camera);
+    const replaying = this.state === 'replay' && this.stepReplay(dt);
+    if (!replaying) ballView.update(ball, gameDt, this.cam.camera);
+    if (this.state === 'playing' && gameDt > 0) {
+      this.replay.record(this.time, ball);
+      if (this.replayDue && this.time >= this.replayDue.to) this.startReplay();
+    }
     this.effects.update(dt, this.cam.camera);
     // Low-end devices animate the crowd at half rate (hundreds of fans, all on the CPU).
     if (!this.stage.lite || (this.crowdTick = !this.crowdTick)) this.crowd.update(this.time, this.stage.lite ? gameDt * 2 : gameDt);
     this.venues?.update(this.time);
 
-    if (mode.cameraPose?.(this.cam.camera, dt)) {
+    if (replaying) {
+      // the replay placed the camera
+    } else if (mode.cameraPose?.(this.cam.camera, dt)) {
       // the mode placed the camera
     } else if (hasDebugFlag('crowdcam')) {
       // Test hook: close-up of the side bleachers, with the crowd cheering.
@@ -1083,25 +1201,39 @@ export class Game {
   /** Paddle "pop": louder for harder hits, panned to where it was struck. */
   private hitSound(): void {
     const b = this.world.ball;
+    const pos = b.pos.clone();
+    const moving = b.vel.lengthSq() > 0;
     const power = Math.min(1, b.vel.length() / 60);
-    if (b.vel.lengthSq() > 0) {
-      this.effects.burst(b.pos, power, false);
+    this.playHit(pos, power, moving, 1);
+    this.replay.event(this.time, () => this.playHit(pos, power, moving, 0.8));
+  }
+
+  /** `rate` < 1 for the slowed-down replay. */
+  private playHit(pos: THREE.Vector3, power: number, moving: boolean, rate: number): void {
+    if (moving) {
+      this.effects.burst(pos, power, false);
       if (power > 0.85 && this.state !== 'title') this.cam.shake(0.35 * power);
     }
     this.sound.play('paddle', {
-      volume: this.spatial(b.pos) * (0.45 + 0.55 * power),
-      pitch: 1.04 + Math.random() * 0.14 + power * 0.1,
-      pan: b.pos.x / 14,
+      volume: this.spatial(pos) * (0.45 + 0.55 * power),
+      pitch: (1.04 + Math.random() * 0.14 + power * 0.1) * rate,
+      pan: pos.x / 14,
     });
   }
 
   private ballSound(e: BallEvent): void {
+    this.playBallEvent(e, 1);
+    this.replay.event(this.time, () => this.playBallEvent(e, 0.8));
+  }
+
+  private playBallEvent(e: BallEvent, rate: number): void {
     const pos = new THREE.Vector3(e.x, e.y, e.z);
     if (e.type === 'bounce') {
       this.world.ballView.squash(e.speed);
-      this.sound.play('bounce', { volume: this.spatial(pos) * Math.min(1, 0.2 + e.speed / 30), pitch: 0.95 + Math.random() * 0.1, pan: e.x / 14 });
+      if (e.speed > 22 && this.state !== 'title') this.effects.impact(pos, Math.min(1, (e.speed - 22) / 30));
+      this.sound.play('bounce', { volume: this.spatial(pos) * Math.min(1, 0.2 + e.speed / 30), pitch: (0.95 + Math.random() * 0.1) * rate, pan: e.x / 14 });
     } else {
-      this.sound.play('net', { volume: e.type === 'net' ? 0.9 : 0.5, pan: e.x / 14 });
+      this.sound.play('net', { volume: e.type === 'net' ? 0.9 : 0.5, pan: e.x / 14, pitch: rate });
     }
   }
 

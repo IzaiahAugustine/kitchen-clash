@@ -1,6 +1,7 @@
 import { Vector3, type Object3D } from 'three';
 import { AiPlayer, type AiContext } from '../ai/aiPlayer';
 import { PROFILES, type AiProfile, type Difficulty } from '../ai/difficulty';
+import type { VoiceLine } from '../audio/sound';
 import type { BallEvent } from '../physics/ball';
 import { PHYS } from '../physics/constants';
 import { predictPath, type PathSample } from '../physics/predict';
@@ -194,6 +195,18 @@ export class MatchMode implements GameMode {
   listener: MatchListener | null = null;
   /** A second listener on this computer (coins, challenges, achievements). */
   observer: Partial<MatchListener> | null = null;
+  /** The announcer calls this match (off for the title screen's background game). */
+  private commentary = false;
+  /** Told about a point worth an instant replay (your long rally, smash winner, ace...). */
+  onHighlight: (() => void) | null = null;
+  /** Test flag (?replays): every point is a highlight. */
+  replayEveryPoint = false;
+  private lastHit: Parameters<MatchListener['hit']>[0] | null = null;
+  /** Points in a row and by whom; the most points each team has trailed by (comebacks). */
+  private streak = { team: 0 as Team, n: 0 };
+  private trailedBy: [number, number] = [0, 0];
+  private lastLine: VoiceLine | null = null;
+  private disposed = false;
   /** Online: the last half-second of ball states, so a friend's late-arriving hit can rewind. */
   private ballHistory: { t: number; pos: Vector3; vel: Vector3; spin: Vector3; rolling: boolean; flight: number; bounces: number }[] = [];
   /** Online: a "bounced twice" call on the friend's side, held briefly in case their hit is in the post. */
@@ -264,6 +277,7 @@ export class MatchMode implements GameMode {
   }
 
   private emit<K extends keyof MatchListener>(key: K, info: Parameters<MatchListener[K]>[0]): void {
+    if (key === 'hit') this.lastHit = info as Parameters<MatchListener['hit']>[0];
     (this.listener?.[key] as ((i: typeof info) => void) | undefined)?.call(this.listener, info);
     (this.observer?.[key] as ((i: typeof info) => void) | undefined)?.call(this.observer, info);
   }
@@ -309,10 +323,34 @@ export class MatchMode implements GameMode {
     this.longestRally = 0;
     this.perfects = 0;
     this.ralliesWon = [0, 0];
+    this.streak = { team: 0, n: 0 };
+    this.trailedBy = [0, 0];
     this.setupServe();
   }
 
+  /** Everything that moves on the players (recorded for instant replays). */
+  replayNodes(): Object3D[] {
+    const out: Object3D[] = [];
+    for (const [, v] of this.views) v.root.traverse((o) => (o === v.root || o.name.startsWith('j_')) && out.push(o));
+    return out;
+  }
+
+  /** Turn the announcer on (a match someone is playing or watching) with a welcome. */
+  startCommentary(): void {
+    this.commentary = true;
+    this.say('welcome', 2, 300);
+  }
+
+  private say(line: VoiceLine, priority: number, delayMs: number): void {
+    if (!this.commentary) return;
+    this.lastLine = line;
+    setTimeout(() => {
+      if (!this.disposed) this.w.audio?.say(line, priority);
+    }, delayMs);
+  }
+
   dispose(): void {
+    this.disposed = true;
     for (const [, v] of this.views) this.w.scene.remove(v.root);
     this.markers.dispose();
   }
@@ -844,7 +882,12 @@ export class MatchMode implements GameMode {
       if (spun || report.kind === 'smash' || report.mph > 40) {
         this.w.fx?.hitstop(spun ? 0.09 : 0.07);
         this.w.fx?.shake(spun ? 0.6 : 0.5);
+        this.w.fx?.punch(report.kind === 'smash' ? 1 : 0.7);
       }
+    } else if (report.kind === 'smash') {
+      // Any smash of yours lands with some weight.
+      this.w.fx?.shake(0.3);
+      this.w.fx?.punch(0.4);
     }
     const popped = report.lowAttack > 0;
     const label = popped ? 'Popped it up!' : spun && report.timing.grade === 'perfect' ? (report.kind === 'roll' ? 'ROLLED IT!' : 'SLICED!') : g.text;
@@ -884,6 +927,7 @@ export class MatchMode implements GameMode {
     this.w.hud.flash(text.title, good ? 'good' : 'bad', 2000, `${who}: ${text.detail} · ${result}`);
     this.log.push(`${fault.reason}:${loser}:${servingBefore === loser ? 'server' : 'receiver'}`);
     this.scoreboard?.update(this.score);
+    this.afterPoint(fault, winner, servingBefore, outcome, shots);
 
     const w = this.score.winner();
     if (w !== null) {
@@ -893,6 +937,7 @@ export class MatchMode implements GameMode {
       this.log.push(`game:${w}:${a}-${b}`);
       this.w.crowd?.cheer(1);
       for (const s of this.teams[w]) s.player.celebrateAt = performance.now();
+      if (this.commentary) for (const s of this.teams[w]) this.w.fx?.confetti(s.player.pos);
       if (this.watching) {
         setTimeout(() => this.w.hud.flash(`${this.teamNames[w]} WIN${this.doubles ? '' : 'S'}`, 'good', 2500, `${a} – ${b}`), 1200);
       } else {
@@ -909,7 +954,48 @@ export class MatchMode implements GameMode {
         setTimeout(() => this.onGameOver?.(result), 1500);
       }
     } else if (this.score.gamePointFor() !== null) {
-      setTimeout(() => this.w.hud.flash('GAME POINT', 'info', 1200), 1000);
+      setTimeout(() => this.w.hud.flash('MATCH POINT', 'info', 1200), 1000);
     }
+  }
+
+  /** The announcer's call for the point just played, and whether it's worth a replay. */
+  private afterPoint(fault: Fault, winner: Team, servingBefore: Team, outcome: RallyOutcome, shots: number): void {
+    const pts = this.score.points;
+    if (outcome.pointTo !== null) {
+      const t = outcome.pointTo;
+      this.streak = this.streak.team === t ? { team: t, n: this.streak.n + 1 } : { team: t, n: 1 };
+      this.trailedBy[0] = Math.max(this.trailedBy[0], pts[1] - pts[0]);
+      this.trailedBy[1] = Math.max(this.trailedBy[1], pts[0] - pts[1]);
+    }
+    const hit = this.lastHit;
+    const winnerHit = hit && hit.team === winner ? hit : null;
+    const ace = shots === 1 && winner === servingBefore;
+    const smash = winnerHit?.kind === 'smash';
+    const over = this.score.winner();
+    if (over !== null) {
+      const youWon = this.teams[over].some((s) => s.human && !s.remote);
+      const line: VoiceLine = this.watching || youWon ? (this.trailedBy[over] >= 5 ? 'comeback' : 'win') : 'lose';
+      this.say(line, 3, 500);
+      return;
+    }
+    // One call per point, the most exciting thing that happened; quieter points get nothing.
+    const fresh = (l: VoiceLine) => l !== this.lastLine;
+    let line: VoiceLine | null = null;
+    if (ace) line = 'ace';
+    else if (smash) line = 'smash';
+    else if (shots >= 20) line = 'unbelievable';
+    else if (shots >= 12) line = 'rally';
+    else if (fault.reason === 'kitchen' || fault.reason === 'kitchen-momentum') line = 'kitchen';
+    else if (outcome.pointTo !== null && this.streak.n >= 4 && this.streak.n % 2 === 0 && fresh('onfire')) line = 'onfire';
+    else if (outcome.pointTo !== null && pts[0] === pts[1] && pts[0] >= 5 && fresh('tied')) line = 'tied';
+    else if (winnerHit?.grade === 'perfect' && winnerHit.human && Math.random() < 0.5 && fresh('great')) line = 'great';
+    else if (outcome.sideOut && Math.random() < 0.25 && fresh('sideout')) line = 'sideout';
+    if (line) this.say(line, 1, 450);
+    if (this.score.gamePointFor() !== null) this.say('matchpoint', 2, line ? 1900 : 1000);
+
+    // Instant replay of your best moments (and any epic rally).
+    const youWon = this.teams[winner].some((s) => s.human && !s.remote);
+    const spinWinner = winnerHit?.spun && winnerHit.grade === 'perfect';
+    if (!this.watching && ((youWon && (shots >= 10 || smash || ace || spinWinner)) || shots >= 16 || this.replayEveryPoint)) this.onHighlight?.();
   }
 }

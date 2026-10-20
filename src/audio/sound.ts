@@ -1,15 +1,38 @@
 /**
- * Sound effects and music with the Web Audio API.
+ * Sound effects, announcer and music with the Web Audio API.
  *
  * Each sound first tries files in public/audio: <name>_1, <name>_2… (variations, one picked at
  * random each time) or plain <name>, as .mp3/.wav/.m4a/.ogg/.aac. Without a file it falls back
  * to a synthesized version so the game is never silent.
- * Music only plays from a file (public/audio/music.*).
+ * Music (public/audio/music.* for menus, match.* during play) and the announcer (vo_*) only
+ * play from files.
  */
 
 export type SoundName = 'paddle' | 'bounce' | 'net' | 'click';
-const FILE_SOUNDS: (SoundName | 'music')[] = ['paddle', 'bounce', 'net', 'click', 'music'];
+/** Announcer call-outs (public/audio/vo_<name>). */
+export type VoiceLine =
+  | 'ace'
+  | 'rally'
+  | 'smash'
+  | 'great'
+  | 'matchpoint'
+  | 'win'
+  | 'lose'
+  | 'sideout'
+  | 'welcome'
+  | 'onfire'
+  | 'tied'
+  | 'kitchen'
+  | 'unbelievable'
+  | 'comeback';
+const VOICE_LINES: VoiceLine[] = ['ace', 'rally', 'smash', 'great', 'matchpoint', 'win', 'lose', 'sideout', 'welcome', 'onfire', 'tied', 'kitchen', 'unbelievable', 'comeback'];
+export type MusicTrack = 'menu' | 'match';
+const FILE_SOUNDS: string[] = ['paddle', 'bounce', 'net', 'click', 'music', 'match', ...VOICE_LINES.map((v) => `vo_${v}`)];
 const EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg', 'aac'];
+/** The match track is 120 bpm: after its 16-second intro it loops 32 bars (64 s), skipping the outro. */
+const MATCH_LOOP = { start: 16.04, end: 80.04 };
+/** Match music sits lower than menu music, under the game sounds. */
+const LEVEL: Record<MusicTrack, number> = { menu: 0.55, match: 0.3 };
 
 export interface PlayOptions {
   /** 0..1 */
@@ -26,10 +49,14 @@ export class Sound {
   private musicGain!: GainNode;
   private buffers = new Map<string, AudioBuffer[]>();
   private noise: AudioBuffer | null = null;
-  private music: AudioBufferSourceNode | null = null;
+  private tracks = new Map<MusicTrack, GainNode>();
   private sfxLevel = 0.8;
   private musicLevel = 0.6;
-  private wantMusic = true;
+  private wantMusic: MusicTrack | null = 'menu';
+  /** The announcer line playing now (one at a time), and its importance. */
+  private voice: { src: AudioBufferSourceNode; priority: number } | null = null;
+  /** Announcer on/off (Settings). */
+  announcer = true;
   private master: GainNode | null = null;
   private muted = false;
 
@@ -58,10 +85,38 @@ export class Sound {
     this.applyMusicLevel();
   }
 
-  /** Menu music on/off (fades). */
-  setMusic(on: boolean): void {
-    this.wantMusic = on;
+  /** Which music plays: menu music, match music, or none (crossfades). */
+  setMusic(track: MusicTrack | null): void {
+    this.wantMusic = track;
     this.applyMusicLevel();
+  }
+
+  /**
+   * The announcer says a line. Only one at a time: a more important line cuts in, anything else
+   * waits its turn by being skipped. The music dips while he talks.
+   */
+  say(line: VoiceLine, priority = 1): void {
+    const ctx = this.ctx;
+    const buf = this.buffers.get(`vo_${line}`)?.[0];
+    if (!ctx || ctx.state !== 'running' || !buf || !this.announcer) return;
+    if (this.voice) {
+      if (this.voice.priority >= priority) return;
+      this.voice.src.onended = null;
+      this.voice.src.stop();
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    g.gain.value = 1.15;
+    src.connect(g).connect(this.sfxGain);
+    src.start();
+    this.voice = { src, priority };
+    this.applyMusicLevel();
+    src.onended = () => {
+      if (this.voice?.src !== src) return;
+      this.voice = null;
+      this.applyMusicLevel();
+    };
   }
 
   play(name: SoundName, opts: PlayOptions = {}): void {
@@ -94,7 +149,6 @@ export class Sound {
     this.sfxGain.gain.value = this.sfxLevel;
     this.sfxGain.connect(this.master);
     this.musicGain = ctx.createGain();
-    this.musicGain.gain.value = 0;
     this.musicGain.connect(this.master);
     this.noise = this.makeNoise(ctx);
     void this.loadFiles();
@@ -127,25 +181,39 @@ export class Sound {
         }
         if (!list.length) return;
         this.buffers.set(name, list);
-        if (name === 'music') this.startMusic();
+        if (name === 'music') this.startMusic('menu', list[0]);
+        if (name === 'match') this.startMusic('match', list[0]);
       }),
     );
   }
 
   private applyMusicLevel(): void {
     if (!this.ctx) return;
-    this.musicGain.gain.setTargetAtTime(this.wantMusic ? 0.55 * this.musicLevel : 0, this.ctx.currentTime, 0.8);
+    const duck = this.voice ? 0.45 : 1;
+    for (const [name, g] of this.tracks) {
+      const level = this.wantMusic === name ? LEVEL[name] * this.musicLevel * duck : 0;
+      g.gain.setTargetAtTime(level, this.ctx.currentTime, this.voice ? 0.08 : 0.8);
+    }
   }
 
-  private startMusic(): void {
+  /** Both tracks loop from the start; switching only crossfades their volumes. */
+  private startMusic(name: MusicTrack, buf: AudioBuffer): void {
     const ctx = this.ctx!;
-    const buf = this.buffers.get('music')?.[0];
-    if (!buf || this.music) return;
-    this.music = ctx.createBufferSource();
-    this.music.buffer = buf;
-    this.music.loop = true;
-    this.music.connect(this.musicGain);
-    this.music.start();
+    if (this.tracks.has(name)) return;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.connect(this.musicGain);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    if (name === 'match' && buf.duration > MATCH_LOOP.end) {
+      src.loopStart = MATCH_LOOP.start;
+      src.loopEnd = MATCH_LOOP.end;
+    }
+    src.connect(g);
+    src.start();
+    this.tracks.set(name, g);
+    this.applyMusicLevel();
   }
 
   private makeNoise(ctx: AudioContext): AudioBuffer {
