@@ -458,7 +458,7 @@ export class TutorialMode implements GameMode {
   }
 
   describe(): string {
-    return `<div class="title">Kitchen Clash <small>How to play</small></div>
+    return `<div class="title">Dinkzilla <small>How to play</small></div>
       <div class="dim"><b>N</b> Skip step · <b>P</b> Menu</div>`;
   }
 

@@ -141,11 +141,11 @@ export function windscreen(): THREE.CanvasTexture {
   do {
     g.font = `900 ${size}px "Lilita One", "Arial Black", sans-serif`;
     size -= 4;
-  } while (g.measureText('KITCHEN CLASH').width > c.width * 0.78 && size > 20);
+  } while (g.measureText('DINKZILLA').width > c.width * 0.78 && size > 20);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = 'rgba(255, 248, 231, 0.85)';
-  g.fillText('KITCHEN CLASH', c.width / 2, c.height / 2 + 6);
+  g.fillText('DINKZILLA', c.width / 2, c.height / 2 + 6);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;

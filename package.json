@@ -1,5 +1,5 @@
 {
-  "name": "kitchen-clash",
+  "name": "dinkzilla",
   "version": "0.1.0",
   "scripts": {
     "dev": "vite",
@@ -8,9 +8,9 @@
     "typecheck": "tsc --noEmit",
     "models": "node tools/build-models.mjs",
     "build:crazygames": "tsc --noEmit && VITE_PORTAL=crazygames vite build --outDir dist-crazygames",
-    "deploy": "npm run build && npx -y firebase-tools@13 deploy --only hosting:game"
+    "deploy": "npm run build && npx -y firebase-tools@13 deploy --only hosting:game,hosting:legacy"
   },
-  "description": "Kitchen Clash — an arcade-style 3D pickleball game for the browser",
+  "description": "Dinkzilla — an arcade-style 3D pickleball game for the browser",
   "dependencies": {
     "firebase": "^11.10.0",
     "three": "^0.186.1"

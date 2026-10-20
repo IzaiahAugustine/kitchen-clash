@@ -171,7 +171,7 @@ html, body {
 .menu-layer.title .menu-card { background: rgba(27, 21, 48, 0.78); }
 .logo {
   font-family: 'Lilita One', sans-serif;
-  font-size: clamp(44px, 9vw, 76px);
+  font-size: clamp(40px, 8vw, 66px);
   line-height: 0.95;
   color: var(--sun);
   -webkit-text-stroke: 3px var(--ink);
@@ -180,7 +180,7 @@ html, body {
   transform: rotate(-3deg);
   margin: 4px 0 2px;
 }
-.logo .clash { color: #ff6b35; display: block; }
+.logo .accent { color: #ff6b35; }
 .tagline { font-weight: 800; letter-spacing: 2px; text-transform: uppercase; font-size: 13px; opacity: 0.85; margin-bottom: 14px; }
 .menu-headline { font-family: 'Lilita One', sans-serif; font-size: 34px; color: var(--sun); margin: 0 0 4px; }
 .menu-sub { font-weight: 800; opacity: 0.85; margin-bottom: 14px; }
@@ -274,7 +274,7 @@ body.touch .hud-panel { display: none; }
 @media (max-height: 820px) and (min-height: 501px) {
   .menu-items { gap: 6px; }
   .menu-item { padding: 8px 16px; }
-  .logo { font-size: 58px; }
+  .logo { font-size: 54px; }
   .tagline { margin-bottom: 10px; }
 }
 @media (max-width: 760px), (max-height: 500px) {
@@ -282,12 +282,11 @@ body.touch .hud-panel { display: none; }
   .hud-toasts { padding-top: 64px; }
   .menu-card { padding: 16px 16px 12px; }
   .menu-item { padding: 9px 14px; font-size: 18px; }
-  .logo { font-size: clamp(38px, 11vw, 60px); }
+  .logo { font-size: clamp(34px, 10vw, 56px); }
 }
 @media (max-height: 500px) {
   .menu-layer { place-items: start center; overflow-y: auto; }
   .logo { font-size: 34px; transform: none; }
-  .logo .clash { display: inline; margin-left: 8px; }
   .tagline { display: none; }
   .menu-items { gap: 6px; }
   .menu-item { padding: 7px 14px; font-size: 17px; }
@@ -321,7 +320,7 @@ body.touch .hud-panel { display: none; }
 @media (max-height: 820px) and (min-height: 501px) {
   .menu-items { gap: 6px; }
   .menu-item { padding: 8px 16px; }
-  .logo { font-size: 58px; }
+  .logo { font-size: 54px; }
   .tagline { margin-bottom: 10px; }
 }
 @media (max-width: 760px), (max-height: 500px) {
@@ -456,6 +455,7 @@ body.touch .coach { display: none; }
 .coin-badge { position: absolute; top: 14px; right: 16px; font-family: 'Lilita One', sans-serif; font-size: 20px; color: var(--sun); }
 .menu-card { position: relative; }
 .coin-earned { font-family: 'Lilita One', sans-serif; font-size: 24px; color: var(--sun); margin: -6px 0 8px; }
+.coin-earned .doubled { color: #3dff7a; margin-left: 4px; }
 .coin-earned small { font-family: 'Nunito', sans-serif; font-size: 13px; color: var(--cream); opacity: 0.75; }
 .reward { font-weight: 800; font-size: 13px; color: var(--good); margin-bottom: 4px; }
 .menu-item .price { margin-left: auto; font-family: 'Lilita One', sans-serif; color: var(--sun); }

@@ -5,8 +5,14 @@
   "targets": {
     "fairway-legends-51e70": {
       "hosting": {
-        "game": ["kitchenclash"]
+        "game": [
+          "dinkzilla"
+        ],
+        "legacy": [
+          "kitchenclash"
+        ]
       }
     }
-  }
+  },
+  "etags": {}
 }

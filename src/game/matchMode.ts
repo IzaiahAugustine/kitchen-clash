@@ -837,7 +837,7 @@ export class MatchMode implements GameMode {
   describe(): string {
     if (this.watching) {
       return `
-        <div class="title">Kitchen Clash <small>Watching AI vs AI${this.doubles ? ' · Doubles' : ''}</small></div>
+        <div class="title">Dinkzilla <small>Watching AI vs AI${this.doubles ? ' · Doubles' : ''}</small></div>
         <div class="big">${this.teamNames[0]} vs ${this.teamNames[1]}</div>
         <div><b>F</b> Fast-forward · <b>T</b> Slow-mo</div>`;
     }
@@ -846,7 +846,7 @@ export class MatchMode implements GameMode {
     const hint = yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = spin (aim with A/D)</div>' : '';
     const partner = this.doubles && you ? '<div class="dim">Doubles: your teal partner covers the other half</div>' : '';
     return `
-      <div class="title">Kitchen Clash <small>vs ${this.teamNames[1]}${this.doubles ? ' · Doubles' : ''}</small></div>
+      <div class="title">Dinkzilla <small>vs ${this.teamNames[1]}${this.doubles ? ' · Doubles' : ''}</small></div>
       <div><b>WASD</b> move + <b>J</b> <b>K</b> <b>L</b> hit &nbsp;·&nbsp; or <b>Arrows</b> + <b>Z</b> <b>X</b> <b>C</b></div>
       <div><b>J</b> Drive · dink &nbsp; <b>K</b> Soft · drop · lob &nbsp; <b>L</b> Spin (hardest to time!)</div>
       ${partner}${hint}

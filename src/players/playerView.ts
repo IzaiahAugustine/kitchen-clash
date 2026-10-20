@@ -51,10 +51,44 @@ function mergeParts(root: THREE.Object3D): void {
 
 const JOINTS = [
   'j_root', 'j_hips', 'j_spine', 'j_neck',
-  'j_shoulder_R', 'j_elbow_R', 'j_shoulder_L', 'j_elbow_L',
-  'j_hip_R', 'j_knee_R', 'j_hip_L', 'j_knee_L',
+  'j_shoulder_R', 'j_elbow_R', 'j_hand_R', 'j_shoulder_L', 'j_elbow_L', 'j_hand_L',
+  'j_hip_R', 'j_knee_R', 'j_ankle_R', 'j_hip_L', 'j_knee_L', 'j_ankle_L',
 ] as const;
 type JointName = (typeof JOINTS)[number];
+
+/**
+ * The one-piece arms and legs (merged skin meshes on the shoulder / hip joints) are skinned to
+ * three joints each: `at` is where (distance down the limb in the rest pose) the second and
+ * third joints take over, blended over `blend` feet so elbows and knees bend smoothly.
+ */
+const LIMBS: { mesh: string; joints: [JointName, JointName, JointName]; at: [number, number]; blend: number }[] = [
+  { mesh: 'ol_skin_j_shoulder_R', joints: ['j_shoulder_R', 'j_elbow_R', 'j_hand_R'], at: [0.95, 1.8], blend: 0.14 },
+  { mesh: 'ol_skin_j_shoulder_L', joints: ['j_shoulder_L', 'j_elbow_L', 'j_hand_L'], at: [0.95, 1.8], blend: 0.14 },
+  { mesh: 'ol_skin_j_hip_R', joints: ['j_hip_R', 'j_knee_R', 'j_ankle_R'], at: [1.35, 2.65], blend: 0.16 },
+  { mesh: 'ol_skin_j_hip_L', joints: ['j_hip_L', 'j_knee_L', 'j_ankle_L'], at: [1.35, 2.65], blend: 0.16 },
+];
+
+/** Skin weights for a limb hanging straight down from its first joint (computed once per model). */
+function limbWeights(geo: THREE.BufferGeometry, at: [number, number], blend: number): void {
+  if (geo.attributes.skinIndex) return;
+  const pos = geo.attributes.position;
+  const n = pos.count;
+  const index = new Uint16Array(n * 4);
+  const weight = new Float32Array(n * 4);
+  const ramp = (d: number) => {
+    const t = clamp01((d + blend) / (2 * blend));
+    return t * t * (3 - 2 * t);
+  };
+  for (let i = 0; i < n; i++) {
+    const down = -pos.getY(i);
+    const second = ramp(down - at[0]);
+    const third = ramp(down - at[1]);
+    index.set([0, 1, 2, 0], i * 4);
+    weight.set([1 - second, second - third, third, 0], i * 4);
+  }
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(index, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weight, 4));
+}
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
@@ -131,6 +165,29 @@ export class PlayerView {
     }
     this.j.j_shoulder_R.rotation.order = 'YZX';
     this.j.j_shoulder_L.rotation.order = 'YZX';
+    this.skinLimbs();
+  }
+
+  /** Swap each one-piece limb for a skinned copy that bends with its joints. */
+  private skinLimbs(): void {
+    this.root.updateMatrixWorld(true);
+    const toRoot = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    for (const limb of LIMBS) {
+      const mesh = this.root.getObjectByName(limb.mesh) as THREE.Mesh | undefined;
+      if (!mesh) continue;
+      limbWeights(mesh.geometry, limb.at, limb.blend);
+      const skinned = new THREE.SkinnedMesh(mesh.geometry, mesh.material);
+      skinned.name = mesh.name;
+      skinned.castShadow = mesh.castShadow;
+      skinned.receiveShadow = mesh.receiveShadow;
+      skinned.frustumCulled = false;
+      new THREE.Matrix4().multiplyMatrices(toRoot, mesh.matrixWorld).decompose(skinned.position, skinned.quaternion, skinned.scale);
+      mesh.parent!.remove(mesh);
+      this.root.add(skinned);
+      skinned.updateMatrixWorld(true);
+      // Joints are plain Object3Ds; the skeleton only needs their world matrices.
+      skinned.bind(new THREE.Skeleton(limb.joints.map((n) => this.j[n]) as unknown as THREE.Bone[]), skinned.matrixWorld);
+    }
   }
 
   /** @param ball ball position, so the head can follow it */
@@ -200,6 +257,9 @@ export class PlayerView {
     const foldL = Math.max(0, backpedal ? -s : s);
     j.j_knee_R.rotation.set(legs.knee - foldR * 1.1 * amp, 0, 0);
     j.j_knee_L.rotation.set(legs.knee - foldL * 1.1 * amp, 0, 0);
+    // Ankles undo most of the leg's tilt so feet stay (nearly) flat; a little toe-off when running.
+    j.j_ankle_R.rotation.set(-(j.j_hip_R.rotation.x + j.j_knee_R.rotation.x) * 0.85, 0, -spread);
+    j.j_ankle_L.rotation.set(-(j.j_hip_L.rotation.x + j.j_knee_L.rotation.x) * 0.85, 0, spread);
 
     // Lean into acceleration (forward when pushing off, back when braking, sideways into cuts).
     const lean = (v: number) => Math.max(-40, Math.min(40, v));

@@ -512,7 +512,7 @@ export class OnlineGuest implements GameMode {
   describe(): string {
     const yourServe = this.phase === 'preServe' && this.serverTeam === ME;
     return `
-      <div class="title">Kitchen Clash <small>Online vs ${this.hostName}</small></div>
+      <div class="title">Dinkzilla <small>Online vs ${this.hostName}</small></div>
       <div><b>WASD</b> move + <b>J</b> <b>K</b> <b>L</b> hit &nbsp;·&nbsp; or <b>Arrows</b> + <b>Z</b> <b>X</b> <b>C</b></div>
       ${yourServe ? '<div class="big ok">Your serve! J = hard · K = safe · L = spin</div>' : ''}
       <hr/>

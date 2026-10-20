@@ -13,7 +13,7 @@ const GUEST_P2P_TIMEOUT_MS = 12000;
 
 export type Role = 'host' | 'guest';
 
-/** A Kitchen Clash online room: a 5-digit code under /kc/rooms in the Realtime Database. */
+/** A Dinkzilla online room: a 5-digit code under /kc/rooms in the Realtime Database. */
 export class Room {
   private unsubs: (() => void)[] = [];
   private pc: RTCPeerConnection | null = null;

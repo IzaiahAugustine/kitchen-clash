@@ -1,7 +1,7 @@
-# Kitchen Clash
+# Dinkzilla
 
 An arcade-style 3D pickleball game for the browser (TypeScript + Vite + Three.js).
-Part of [Augustine's Arcade](https://augustinesarcade.com). Play it at **https://kitchenclash.web.app**.
+Part of [Augustine's Arcade](https://augustinesarcade.com). Play it at **https://dinkzilla.web.app** (the old address https://kitchenclash.web.app serves the same game).
 
 ## Run it
 
@@ -11,7 +11,7 @@ npm run dev        # opens http://localhost:5173
 ```
 
 - `npm run build`: typecheck and build for production into `dist/`
-- `npm run deploy`: build and publish to https://kitchenclash.web.app (Firebase site `kitchenclash` in project `fairway-legends-51e70`)
+- `npm run deploy`: build and publish to https://dinkzilla.web.app and https://kitchenclash.web.app (Firebase sites `dinkzilla` and `kitchenclash` in project `fairway-legends-51e70`)
 - `npx tsx tools/sim/rules-test.ts`: unit tests for scoring and the referee
 - `npx tsx tools/sim/online-sim.ts [lagMs] [timingNoise]`: host and guest over an in-memory link with lag, checks they stay in sync
 - `npx tsx tools/sim/tutorial-sim.ts`: scripted playthrough of How to Play (checks every step can be completed)

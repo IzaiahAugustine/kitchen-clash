@@ -38,6 +38,9 @@ declare global {
   }
 }
 
+/** Test flag (?fakeads): pretend to be on a portal so the rewarded-ad button can be tried. */
+const FAKE_ADS = typeof location !== 'undefined' && new URLSearchParams(location.search).has('fakeads');
+
 const SCRIPTS: Record<Exclude<PortalId, null>, string> = {
   poki: 'https://game-cdn.poki.com/scripts/v2/poki-sdk.js',
   crazygames: 'https://sdk.crazygames.com/crazygames-sdk-v3.js',
@@ -77,7 +80,7 @@ class Portal {
 
   /** True when ads can be requested (on a portal and its SDK came up). */
   get active() {
-    return this.ready;
+    return this.ready || FAKE_ADS;
   }
 
   async init() {
@@ -156,6 +159,13 @@ class Portal {
 
   /** An ad the player chose to watch for a reward. Resolves true if the reward is earned. */
   async rewardedBreak(): Promise<boolean> {
+    if (FAKE_ADS && !this.ready) {
+      // Test stand-in: a two-second silent "ad".
+      this.onAdStart();
+      await new Promise((r) => setTimeout(r, 2000));
+      this.onAdEnd();
+      return true;
+    }
     if (!this.ready || this.adBusy) return false;
     this.adBusy = true;
     let started = false;

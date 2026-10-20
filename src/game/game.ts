@@ -699,9 +699,9 @@ export class Game {
           label: typeof navigator.share === 'function' ? 'Share invite link' : 'Copy invite link',
           primary: true,
           action: () => {
-            const text = `Play Kitchen Clash with me! ${link}`;
+            const text = `Play Dinkzilla with me! ${link}`;
             const nav: Navigator = navigator;
-            if (typeof nav.share === 'function') void nav.share({ title: 'Kitchen Clash', text, url: link }).catch(() => {});
+            if (typeof nav.share === 'function') void nav.share({ title: 'Dinkzilla', text, url: link }).catch(() => {});
             else void nav.clipboard?.writeText(link).then(() => this.world.hud.flash('Link copied!', 'good', 900));
           },
         },
@@ -848,7 +848,7 @@ export class Game {
     const s = this.settings;
     this.menu.show({
       variant: 'title',
-      header: `<div class="coin-badge">${coinIcon()} ${this.progress.state.coins}</div><div class="logo">KITCHEN<span class="clash">CLASH!</span></div><div class="tagline">Arcade Pickleball</div>`,
+      header: `<div class="coin-badge">${coinIcon()} ${this.progress.state.coins}</div><div class="logo">DINK<span class="accent">ZILLA!</span></div><div class="tagline">Arcade Pickleball</div>`,
       items: [
         { label: '▶ Play vs AI', primary: s.tutorialDone, action: () => this.showQuickPlay() },
         { label: `🏆 Tournament${s.tourneyWins >= RIVALS.length ? ' ✓' : s.tourneyWins ? ` (${s.tourneyWins}/${RIVALS.length})` : ''}`, action: () => this.showTournament() },
@@ -986,13 +986,41 @@ export class Game {
       ];
     }
     // Coins for the match (and any challenges/achievements it finished).
-    let coinLine = '';
+    let earned = 0;
+    let doubled = false;
+    let adBusy = false;
+    const extras = this.matchRewards.map((t) => `<div class="reward">★ ${this.escape(t)}</div>`).join('');
     if (this.tracker) {
-      const earned = this.tracker.finish(r, !!youWon);
+      earned = this.tracker.finish(r, !!youWon);
       this.tracker = null;
-      const extras = this.matchRewards.map((t) => `<div class="reward">★ ${this.escape(t)}</div>`).join('');
-      coinLine = `<div class="coin-earned">${coinIcon()} +${earned} coins <small>· ${this.progress.state.coins} total</small></div>${extras}`;
     }
+    const coinLine = () =>
+      earned
+        ? `<div class="coin-earned">${coinIcon()} +${doubled ? earned * 2 : earned} coins${doubled ? ' <b class="doubled">×2</b>' : ''} <small>· ${this.progress.state.coins} total</small></div>${extras}`
+        : '';
+    // On a game portal: watch an ad (your choice) to double the coins from this match.
+    const adItem = (): MenuScreen['items'] =>
+      portal.active && earned > 0 && !doubled && this.current !== 'online'
+        ? [
+            {
+              label: `🎬 Watch an ad: double coins (+${earned})`,
+              action: async () => {
+                if (adBusy) return;
+                adBusy = true;
+                const ok = await portal.rewardedBreak();
+                adBusy = false;
+                if (!ok) {
+                  this.world.hud.flash('No ad right now', 'info', 1400, 'Try again after your next match');
+                  return;
+                }
+                doubled = true;
+                this.progress.addCoins(earned);
+                this.sound.play('click', { volume: 0.9, pitch: 1.6 });
+                this.menu.show(screen());
+              },
+            },
+          ]
+        : [];
     const stats = [
       ['Rallies won', `${r.ralliesWon[0]}–${r.ralliesWon[1]}`],
       ['Longest rally', `${r.longestRally} shots`],
@@ -1000,12 +1028,12 @@ export class Game {
     ]
       .map(([k, v]) => `<div><b>${v}</b>${k}</div>`)
       .join('');
-    const screen: MenuScreen = {
+    const screen = (): MenuScreen => ({
       header: `<div class="menu-headline">${headline}</div>
         <div class="result-score">${r.points[0]} – ${r.points[1]}</div>
         <div class="menu-sub">${r.names[0]} vs ${r.names[1]}</div>
-        <div class="result-stats">${stats}</div>${coinLine}${unlockLine}`,
-      items: tourneyItems ?? (
+        <div class="result-stats">${stats}</div>${coinLine()}${unlockLine}`,
+      items: tourneyItems ? [tourneyItems[0], ...adItem(), ...tourneyItems.slice(1)] : (
         this.current === 'online'
           ? this.mode instanceof OnlineHost
             ? [
@@ -1015,10 +1043,11 @@ export class Game {
             : [{ label: 'Leave match', action: () => this.leaveOnline() }]
           : [
         { label: '▶ Rematch', primary: true, action: () => this.restart() },
+        ...adItem(),
         { label: 'Main menu', action: () => this.showTitle() },
       ]),
-    };
-    this.menu.show(screen);
+    });
+    this.menu.show(screen());
   }
 
   private option(label: string, options: string[], get: () => number, set: (i: number) => void) {
