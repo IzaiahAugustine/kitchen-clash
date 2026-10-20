@@ -360,10 +360,10 @@ export class MatchMode implements GameMode {
     return out;
   }
 
-  /** Turn the announcer on (a match someone is playing or watching) with a welcome. */
-  startCommentary(): void {
+  /** Turn the announcer on (a match someone is playing or watching) with a welcome (or a boss intro). */
+  startCommentary(intro: VoiceLine = 'welcome'): void {
     this.commentary = true;
-    this.say('welcome', 2, 300);
+    this.say(intro, 2, 300);
   }
 
   private say(line: VoiceLine, priority: number, delayMs: number): void {

@@ -584,7 +584,7 @@ export class Game {
     this.setMode(m);
     this.track(m, 0, { kind: 'career', opponent: 'hard' });
     this.highlights(m);
-    m.startCommentary();
+    m.startCommentary(o.scale ? 'zilla' : o.boss ? 'boss' : 'welcome');
     this.enterPlaying();
   }
 

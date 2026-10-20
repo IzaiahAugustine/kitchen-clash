@@ -24,8 +24,10 @@ export type VoiceLine =
   | 'tied'
   | 'kitchen'
   | 'unbelievable'
-  | 'comeback';
-const VOICE_LINES: VoiceLine[] = ['ace', 'rally', 'smash', 'great', 'matchpoint', 'win', 'lose', 'sideout', 'welcome', 'onfire', 'tied', 'kitchen', 'unbelievable', 'comeback'];
+  | 'comeback'
+  | 'boss'
+  | 'zilla';
+const VOICE_LINES: VoiceLine[] = ['ace', 'rally', 'smash', 'great', 'matchpoint', 'win', 'lose', 'sideout', 'welcome', 'onfire', 'tied', 'kitchen', 'unbelievable', 'comeback', 'boss', 'zilla'];
 export type MusicTrack = 'menu' | 'match';
 const FILE_SOUNDS: string[] = ['paddle', 'bounce', 'net', 'click', 'music', 'match', ...VOICE_LINES.map((v) => `vo_${v}`)];
 const EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg', 'aac'];
